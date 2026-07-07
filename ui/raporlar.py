@@ -1,4 +1,4 @@
-import csv
+# csv import removed (unused) to satisfy flake8 F401
 import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog, messagebox
@@ -8,14 +8,15 @@ from openpyxl import Workbook
 
 
 class RaporlarSayfasi(ctk.CTkFrame):
-
     def __init__(self, parent, db, dashboard_callback=None):
         super().__init__(parent)
         self.db = db
         self.dashboard_callback = dashboard_callback
         self.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(self, text="📄 Raporlar", font=("Segoe UI", 28, "bold")).pack(pady=20)
+        ctk.CTkLabel(self, text="📄 Raporlar", font=("Segoe UI", 28, "bold")).pack(
+            pady=20
+        )
 
         simdi = datetime.now()
         ctk.CTkLabel(self, text="Başlangıç Tarihi", font=("Segoe UI", 14)).pack()
@@ -28,9 +29,15 @@ class RaporlarSayfasi(ctk.CTkFrame):
         self.bitis.insert(0, simdi.strftime("%d.%m.%Y"))
         self.bitis.pack(pady=6)
 
-        ctk.CTkButton(self, text="📊 Raporu Göster", width=220, command=self.goster).pack(pady=16)
-        ctk.CTkButton(self, text="⬇️ CSV Olarak Dışa Aktar", width=240, command=self.disa_aktar).pack(pady=8)
-        ctk.CTkButton(self, text="📗 Excel Olarak Dışa Aktar", width=240, command=self.excel_aktar).pack(pady=8)
+        ctk.CTkButton(
+            self, text="📊 Raporu Göster", width=220, command=self.goster
+        ).pack(pady=16)
+        ctk.CTkButton(
+            self, text="⬇️ CSV Olarak Dışa Aktar", width=240, command=self.disa_aktar
+        ).pack(pady=8)
+        ctk.CTkButton(
+            self, text="📗 Excel Olarak Dışa Aktar", width=240, command=self.excel_aktar
+        ).pack(pady=8)
 
         self.ozet = ctk.CTkTextbox(self, height=220)
         self.ozet.pack(fill="both", expand=True, padx=20, pady=10)
@@ -50,13 +57,17 @@ class RaporlarSayfasi(ctk.CTkFrame):
             messagebox.showerror("Hata", str(hata))
 
     def disa_aktar(self):
-        yol = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Dosyası", "*.csv")])
+        yol = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV Dosyası", "*.csv")]
+        )
         if yol:
             self.db.export_csv(yol)
             messagebox.showinfo("Başarılı", f"Rapor dışa aktarıldı: {yol}")
 
     def excel_aktar(self):
-        yol = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Dosyası", "*.xlsx")])
+        yol = filedialog.asksaveasfilename(
+            defaultextension=".xlsx", filetypes=[("Excel Dosyası", "*.xlsx")]
+        )
         if not yol:
             return
 

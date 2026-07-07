@@ -1,18 +1,20 @@
 from datetime import datetime
+
 import customtkinter as ctk
-from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 
 class GrafiklerSayfasi(ctk.CTkFrame):
-
     def __init__(self, parent, db, dashboard_callback=None):
         super().__init__(parent)
         self.db = db
         self.dashboard_callback = dashboard_callback
         self.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(self, text="📊 Grafikler", font=("Segoe UI", 28, "bold")).pack(pady=20)
+        ctk.CTkLabel(self, text="📊 Grafikler", font=("Segoe UI", 28, "bold")).pack(
+            pady=20
+        )
 
         fig = Figure(figsize=(8, 6), dpi=100)
         ax1 = fig.add_subplot(211)

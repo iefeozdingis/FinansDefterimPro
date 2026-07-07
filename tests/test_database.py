@@ -6,7 +6,6 @@ import database as db_module
 
 
 class DatabaseTests(unittest.TestCase):
-
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         db_module.DB_FOLDER = Path(self.temp_dir.name)
@@ -22,7 +21,8 @@ class DatabaseTests(unittest.TestCase):
         self.db.guncelle_islem(1, "02.01.2026", "Gelir", "Maaş", "Güncellendi", 1200)
 
         islem = self.db.tum_islemler()[0]
-        self.assertEqual(islem[1], "02.01.2026")
+        # dates are normalized to ISO YYYY-MM-DD
+        self.assertEqual(islem[1], "2026-01-02")
         self.assertEqual(islem[5], 1200.0)
 
         self.db.kaydet_butce(1, 2026, "Yemek", 500)

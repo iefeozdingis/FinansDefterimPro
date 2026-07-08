@@ -15,6 +15,14 @@ DB_FOLDER.mkdir(exist_ok=True)
 
 DB_PATH = DB_FOLDER / "finans.db"
 
+# Sabit salt (gerçek projede her kullanıcı için ayrı olmalı)
+_SALT = b"Fineding2024!"
+
+
+def _sifre_hashla(sifre: str) -> str:
+    """SHA-256 + salt ile şifre hash'ler."""
+    return hashlib.sha256(_SALT + sifre.encode()).hexdigest()
+
 
 def normalize_date(tarih_str: str) -> str:
     """Normalize a date string to ISO YYYY-MM-DD.
@@ -41,7 +49,9 @@ def normalize_date(tarih_str: str) -> str:
 class Database:
     def __init__(self) -> None:
         self.conn = sqlite3.connect(DB_PATH)
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self.cursor = self.conn.cursor()
+        self._son_silinen: Optional[Tuple[Any, ...]] = None
         self.create_tables()
 
     # ==========================
@@ -90,6 +100,50 @@ class Database:
         )
         """
         )
+
+        self.cursor.execute(
+            """
+        CREATE TABLE IF NOT EXISTS planlanan(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ay INTEGER NOT NULL,
+            yil INTEGER NOT NULL,
+            kategori TEXT NOT NULL,
+            tur TEXT NOT NULL,
+            aciklama TEXT,
+            tutar REAL NOT NULL
+        )
+        """
+        )
+
+        self.cursor.execute(
+            """
+        CREATE TABLE IF NOT EXISTS borclar(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tur TEXT NOT NULL,
+            aciklama TEXT NOT NULL,
+            kisi TEXT,
+            toplam_tutar REAL NOT NULL,
+            kalan_tutar REAL NOT NULL,
+            baslangic_tarih TEXT,
+            vade_tarih TEXT,
+            durum TEXT NOT NULL DEFAULT 'Aktif'
+        )
+        """
+        )
+
+        self.cursor.execute(
+            """
+        CREATE TABLE IF NOT EXISTS kullanicilar(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kullanici_adi TEXT UNIQUE NOT NULL,
+            sifre_hash TEXT NOT NULL,
+            ad_soyad TEXT,
+            olusturma_tarihi TEXT NOT NULL
+        )
+        """
+        )
+
+        # İlk kullanıcı otomatik admin olur (ID=1)
 
         self.conn.commit()
     # ==========================
@@ -145,6 +199,30 @@ class Database:
         """
         )
 
+        return self.cursor.fetchall()
+
+    def tum_islem_sayisi(self) -> int:
+        self.cursor.execute("SELECT COUNT(*) FROM islemler")
+        row = self.cursor.fetchone()
+        return row[0] if row else 0
+
+    def islem_ara(
+        self, arama: str = "", tur: str = ""
+    ) -> List[Tuple[Any, ...]]:
+        """Belirtilen metin ve türe göre işlemleri filtreleyerek arar."""
+        sorgu = "SELECT * FROM islemler WHERE 1=1"
+        params: List[Any] = []
+        if arama:
+            sorgu += (
+                " AND (kategori LIKE ? OR aciklama LIKE ? OR CAST(tutar AS TEXT) LIKE ?)"
+            )
+            like = f"%{arama}%"
+            params.extend([like, like, like])
+        if tur:
+            sorgu += " AND tur=?"
+            params.append(tur)
+        sorgu += " ORDER BY id DESC"
+        self.cursor.execute(sorgu, tuple(params))
         return self.cursor.fetchall()
 
     def guncelle_islem(
@@ -224,12 +302,60 @@ class Database:
             self.cursor.execute(sorgu)
         return self.cursor.fetchall()
 
+    def aylik_ozet(self) -> List[Tuple[str, float, float]]:
+        """(ay, gelir_toplam, gider_toplam) listesi döner. Son 12 ay."""
+        self.cursor.execute(
+            """
+        SELECT
+            strftime('%Y-%m', tarih) AS ay,
+            SUM(CASE WHEN tur='Gelir' THEN tutar ELSE 0 END),
+            SUM(CASE WHEN tur='Gider' THEN tutar ELSE 0 END)
+        FROM islemler
+        GROUP BY ay
+        ORDER BY ay DESC
+        LIMIT 12
+        """
+        )
+        return [(r[0], float(r[1]), float(r[2])) for r in self.cursor.fetchall()]
+
     def export_csv(self, path: str) -> None:
         with open(path, "w", newline="", encoding="utf-8") as dosya:
             writer = csv.writer(dosya)
             writer.writerow(["id", "tarih", "tur", "kategori", "aciklama", "tutar"])
             for satir in self.tum_islemler():
-                writer.writerow(satir)
+                # Tarihi GG.AA.YYYY formatına çevir
+                try:
+                    dt = datetime.strptime(satir[1], "%Y-%m-%d")
+                    tarih_goster = dt.strftime("%d.%m.%Y")
+                except ValueError:
+                    tarih_goster = satir[1]
+                writer.writerow([satir[0], tarih_goster, satir[2],
+                                satir[3], satir[4], satir[5]])
+
+    def import_csv(self, path: str) -> int:
+        """CSV dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner."""
+        eklenen = 0
+        with open(path, "r", encoding="utf-8") as dosya:
+            reader = csv.DictReader(dosya)
+            for satir in reader:
+                try:
+                    tarih = normalize_date(satir.get("tarih", ""))
+                    tur = satir.get("tur", "").strip()
+                    kategori = satir.get("kategori", "").strip()
+                    aciklama = satir.get("aciklama", "").strip() or None
+                    tutar = float(satir.get("tutar", "0"))
+                    if tur not in ("Gelir", "Gider"):
+                        continue
+                    self.cursor.execute(
+                        "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (tarih, tur, kategori, aciklama, tutar),
+                    )
+                    eklenen += 1
+                except (ValueError, KeyError):
+                    continue
+        self.conn.commit()
+        return eklenen
 
     def kaydet_butce(self, ay: int, yil: int, kategori: str, tutar: float) -> None:
         self.cursor.execute(
@@ -323,7 +449,9 @@ class Database:
         shutil.copy2(kaynak_yol, DB_PATH)
         self.conn.close()
         self.conn = sqlite3.connect(DB_PATH)
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self.cursor = self.conn.cursor()
+        self._son_silinen = None
 
     def ayar_oku(self, anahtar: str, varsayilan: Optional[str] = None) -> Optional[str]:
         self.cursor.execute("SELECT deger FROM ayarlar WHERE anahtar=?", (anahtar,))
@@ -385,9 +513,220 @@ class Database:
     # ==========================
 
     def sil(self, id: int) -> None:
+        # Silmeden önce kaydı sakla (geri almak için)
+        self.cursor.execute("SELECT * FROM islemler WHERE id=?", (id,))
+        self._son_silinen = self.cursor.fetchone()
         self.cursor.execute("DELETE FROM islemler WHERE id=?", (id,))
-
         self.conn.commit()
+
+    def geri_al(self) -> bool:
+        """Son silinen işlemi geri getirir. Başarılıysa True döner."""
+        if self._son_silinen is None:
+            return False
+        try:
+            self.cursor.execute("BEGIN")
+            self.cursor.execute(
+                "INSERT INTO islemler (id, tarih, tur, kategori, aciklama, tutar) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                self._son_silinen,
+            )
+            self.conn.commit()
+            self._son_silinen = None
+            return True
+        except Exception:
+            self.conn.rollback()
+            return False
+
+    # ==========================
+    # PLANLAMA İŞLEMLERİ
+    # ==========================
+
+    def planlanan_ekle(self, ay: int, yil: int, kategori: str, tur: str,
+                       aciklama: str, tutar: float) -> int:
+        self.cursor.execute(
+            "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, tutar) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (ay, yil, kategori, tur, aciklama, tutar),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def planlanan_guncelle(self, id: int, kategori: str, tur: str,
+                           aciklama: str, tutar: float) -> None:
+        self.cursor.execute(
+            "UPDATE planlanan SET kategori=?, tur=?, aciklama=?, tutar=? "
+            "WHERE id=?",
+            (kategori, tur, aciklama, tutar, id),
+        )
+        self.conn.commit()
+
+    def planlanan_sil(self, id: int) -> None:
+        self.cursor.execute("DELETE FROM planlanan WHERE id=?", (id,))
+        self.conn.commit()
+
+    def planlanan_listele(self, ay: int, yil: int) -> List[Tuple[Any, ...]]:
+        self.cursor.execute(
+            "SELECT * FROM planlanan WHERE ay=? AND yil=? ORDER BY tur, kategori",
+            (ay, yil),
+        )
+        return self.cursor.fetchall()
+
+    def planlanan_ozet(self, ay: int, yil: int) -> Dict[str, float]:
+        self.cursor.execute(
+            "SELECT tur, SUM(tutar) FROM planlanan WHERE ay=? AND yil=? "
+            "GROUP BY tur",
+            (ay, yil),
+        )
+        sonuc = {"Gelir": 0.0, "Gider": 0.0}
+        for tur, toplam in self.cursor.fetchall():
+            sonuc[tur] = float(toplam)
+        return sonuc
+
+    # ==========================
+    # BORÇ / ALACAK İŞLEMLERİ
+    # ==========================
+
+    def borc_ekle(self, tur: str, aciklama: str, kisi: str, toplam: float,
+                  kalan: float, baslangic: str, vade: str) -> int:
+        self.cursor.execute(
+            "INSERT INTO borclar (tur, aciklama, kisi, toplam_tutar, "
+            "kalan_tutar, baslangic_tarih, vade_tarih, durum) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'Aktif')",
+            (tur, aciklama, kisi, toplam, kalan, baslangic, vade),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def borc_guncelle(self, id: int, kalan: float, durum: str) -> None:
+        self.cursor.execute(
+            "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=?",
+            (kalan, durum, id),
+        )
+        self.conn.commit()
+
+    def borc_sil(self, id: int) -> None:
+        self.cursor.execute("DELETE FROM borclar WHERE id=?", (id,))
+        self.conn.commit()
+
+    def borclari_listele(self, durum: str = "Aktif") -> List[Dict[str, Any]]:
+        if durum == "Tümü":
+            self.cursor.execute(
+                "SELECT * FROM borclar ORDER BY vade_tarih"
+            )
+        else:
+            self.cursor.execute(
+                "SELECT * FROM borclar WHERE durum=? ORDER BY vade_tarih",
+                (durum,),
+            )
+        kolonlar = ["id", "tur", "aciklama", "kisi", "toplam_tutar",
+                    "kalan_tutar", "baslangic_tarih", "vade_tarih", "durum"]
+        return [dict(zip(kolonlar, satir)) for satir in self.cursor.fetchall()]
+
+    def borc_toplam(self, durum: str = "Aktif") -> float:
+        self.cursor.execute(
+            "SELECT IFNULL(SUM(kalan_tutar), 0) FROM borclar WHERE durum=?",
+            (durum,),
+        )
+        row = self.cursor.fetchone()
+        return float(row[0]) if row else 0.0
+
+    # ==========================
+    # KULLANICI İŞLEMLERİ
+    # ==========================
+
+    def kullanici_dogrula(self, kullanici_adi: str, sifre: str) -> Optional[Dict[str, Any]]:
+        """Kullanıcı girişi doğrular, başarılıysa kullanıcı bilgilerini döner."""
+        sifre_hash = _sifre_hashla(sifre)
+        self.cursor.execute(
+            "SELECT id, kullanici_adi, ad_soyad FROM kullanicilar "
+            "WHERE kullanici_adi=? AND sifre_hash=?",
+            (kullanici_adi, sifre_hash),
+        )
+        row = self.cursor.fetchone()
+        if row:
+            return {"id": row[0], "kullanici_adi": row[1], "ad_soyad": row[2]}
+        return None
+
+    def kullanici_kaydet(self, kullanici_adi: str, sifre: str, ad_soyad: str) -> bool:
+        """Yeni kullanıcı kaydeder. Başarılıysa True."""
+        from datetime import datetime as dt
+        sifre_hash = _sifre_hashla(sifre)
+        try:
+            self.cursor.execute(
+                "INSERT INTO kullanicilar (kullanici_adi, sifre_hash, ad_soyad, "
+                "olusturma_tarihi) VALUES (?, ?, ?, ?)",
+                (kullanici_adi, sifre_hash, ad_soyad,
+                 dt.now().strftime("%Y-%m-%d %H:%M")),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def kullanici_sifre_degistir(self, kullanici_id: int, yeni_sifre: str) -> None:
+        sifre_hash = _sifre_hashla(yeni_sifre)
+        self.cursor.execute(
+            "UPDATE kullanicilar SET sifre_hash=? WHERE id=?",
+            (sifre_hash, kullanici_id),
+        )
+        self.conn.commit()
+
+    def kullanici_profil_guncelle(self, kullanici_id: int, ad_soyad: str) -> None:
+        self.cursor.execute(
+            "UPDATE kullanicilar SET ad_soyad=? WHERE id=?",
+            (ad_soyad, kullanici_id),
+        )
+        self.conn.commit()
+
+    def kullanici_ad_oku(self, kullanici_id: int) -> str:
+        self.cursor.execute(
+            "SELECT ad_soyad FROM kullanicilar WHERE id=?",
+            (kullanici_id,),
+        )
+        row = self.cursor.fetchone()
+        return row[0] if row else ""
+
+    def kullanici_listele(self) -> List[Dict[str, Any]]:
+        self.cursor.execute(
+            "SELECT id, kullanici_adi, ad_soyad, olusturma_tarihi FROM kullanicilar"
+        )
+        return [
+            {"id": r[0], "kullanici_adi": r[1], "ad_soyad": r[2],
+             "olusturma_tarihi": r[3]}
+            for r in self.cursor.fetchall()
+        ]
+
+    def kullanici_admin_mi(self, kullanici_id: int) -> bool:
+        """ID'si 1 olan kullanıcı admindir."""
+        return kullanici_id == 1
+
+    def kullanici_sil(self, kullanici_id: int) -> bool:
+        """Kullanıcıyı sil (admin kendini silemez)."""
+        if kullanici_id == 1:
+            return False
+        self.cursor.execute("DELETE FROM kullanicilar WHERE id=?", (kullanici_id,))
+        self.conn.commit()
+        return True
+
+    # ==========================
+    # ÖZEL KATEGORİ YÖNETİMİ
+    # ==========================
+
+    def kategori_ekle(self, tur: str, kategori: str) -> None:
+        """Belirtilen tür (Gelir/Gider) için özel kategori ekler."""
+        anahtar = f"kategoriler_{tur.lower()}"
+        mevcut = self.ayar_oku(anahtar, "")
+        kategoriler = [k.strip() for k in mevcut.split(",") if k.strip()]
+        if kategori not in kategoriler:
+            kategoriler.append(kategori)
+            self.ayar_kaydet(anahtar, ",".join(kategoriler))
+
+    def kategorileri_getir(self, tur: str) -> List[str]:
+        """Belirtilen tür için tüm kategorileri (varsayılan + özel) döner."""
+        anahtar = f"kategoriler_{tur.lower()}"
+        mevcut = self.ayar_oku(anahtar, "")
+        ozel = [k.strip() for k in mevcut.split(",") if k.strip()]
+        return ozel
 
     # ==========================
     # KAPAT

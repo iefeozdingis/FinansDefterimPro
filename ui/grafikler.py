@@ -13,8 +13,23 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(self, text="📊 Grafikler", font=("Segoe UI", 28, "bold")).pack(
-            pady=20
+            pady=(20, 5)
         )
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=(0, 10))
+        ctk.CTkButton(
+            btn_frame, text="🔄 Grafikleri Yenile", width=200,
+            fg_color="#0d9488", command=self._grafik_ciz
+        ).pack()
+
+        self._grafik_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self._grafik_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        self._grafik_ciz()
+
+    def _grafik_ciz(self):
+        for widget in self._grafik_frame.winfo_children():
+            widget.destroy()
 
         fig = Figure(figsize=(8, 6), dpi=100)
         ax1 = fig.add_subplot(211)
@@ -43,18 +58,33 @@ class GrafiklerSayfasi(ctk.CTkFrame):
             ax2.text(0.5, 0.5, "Henüz gelir verisi yok", ha="center", va="center")
             ax2.set_title("Gelir Kategori Dağılımı")
 
+        # Gider pasta grafiği (yeni)
+        fig2 = Figure(figsize=(4, 3), dpi=100)
+        ax3 = fig2.add_subplot(111)
+        giderler = self.db.kategori_toplamlari("Gider")
+        if giderler:
+            labels2 = [item[0] for item in giderler[:5]]
+            values2 = [item[1] for item in giderler[:5]]
+            ax3.pie(values2, labels=labels2, autopct="%1.1f%%",
+                    colors=["#c0392b", "#e74c3c", "#e67e22", "#f39c12", "#d35400"])
+            ax3.set_title("Gider Kategori Dağılımı")
+        else:
+            ax3.text(0.5, 0.5, "Henüz gider verisi yok", ha="center", va="center")
+            ax3.set_title("Gider Kategori Dağılımı")
+        fig2.tight_layout()
+        canvas2 = FigureCanvasTkAgg(fig2, master=self._grafik_frame)
+        canvas2.draw()
+        canvas2.get_tk_widget().pack(fill="both", expand=True, pady=(10, 0))
+
         fig.tight_layout()
-        canvas = FigureCanvasTkAgg(fig, master=self)
+        canvas = FigureCanvasTkAgg(fig, master=self._grafik_frame)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True, padx=20, pady=10)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _aylik_veri(self):
+        """SQL tabanlı aylık özet — tüm veriyi RAM'e çekmez."""
         data = {"Gelir": {}, "Gider": {}}
-        for _, tarih, tur, _, _, tutar in self.db.tum_islemler():
-            try:
-                dt = datetime.strptime(tarih, "%d.%m.%Y")
-            except ValueError:
-                continue
-            anahtar = dt.strftime("%Y-%m")
-            data[tur][anahtar] = data[tur].get(anahtar, 0) + float(tutar)
+        for ay, gelir, gider in self.db.aylik_ozet():
+            data["Gelir"][ay] = gelir
+            data["Gider"][ay] = gider
         return data

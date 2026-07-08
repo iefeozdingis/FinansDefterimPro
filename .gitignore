@@ -10,5 +10,10 @@ __pycache__/
 *.log
 *.db
 *.sqlite3
+*.sqlite
+*.sha256
 exports/
 database/*.db
+database/*.sqlite*
+backups/
+logs/

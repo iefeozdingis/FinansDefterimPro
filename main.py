@@ -1,4 +1,10 @@
 import customtkinter as ctk
+import logging
+import threading
+from datetime import datetime, date
+from pathlib import Path
+
+from PIL import Image as PILImage
 
 from database import Database
 from ui.ayarlar import AyarlarSayfasi
@@ -7,39 +13,171 @@ from ui.dashboard import Dashboard
 from ui.gelir import GelirSayfasi
 from ui.gider import GiderSayfasi
 from ui.grafikler import GrafiklerSayfasi
+from ui.giris import GirisEkrani
+from ui.hakkinda import HakkindaSayfasi
+from ui.planlama import PlanlamaSayfasi
 from ui.raporlar import RaporlarSayfasi
 
-ctk.set_default_color_theme("blue")
+# Loglama
+log_dir = Path(__file__).parent / "logs"
+log_dir.mkdir(exist_ok=True)
+logging.basicConfig(
+    filename=log_dir / f"app_{datetime.now().strftime('%Y%m%d')}.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    encoding="utf-8",
+)
+logger = logging.getLogger(__name__)
+
+ctk.set_default_color_theme(str(Path(__file__).parent / "assets" / "fineding_theme.json"))
+
+# Bildirim sistemi
+try:
+    from plyer import notification
+    HAS_NOTIFICATIONS = True
+except ImportError:
+    HAS_NOTIFICATIONS = False
+
+# Sistem tepsisi
+try:
+    import pystray
+    HAS_TRAY = True
+except ImportError:
+    HAS_TRAY = False
 
 
-class FinansDefterim(ctk.CTk):
+def _bildirim_gonder(baslik, mesaj):
+    """Windows toast bildirimi gönder."""
+    try:
+        if HAS_NOTIFICATIONS:
+            notification.notify(
+                title=baslik,
+                message=mesaj,
+                app_name="Fineding",
+                timeout=8,
+            )
+    except Exception:
+        pass  # Bildirim başarısız olursa sessizce devam et
+
+
+def _borc_kontrol_thread(db_path: str):
+    """Arka planda borç vadesi yaklaşanları kontrol eder."""
+    import time
+    import sqlite3
+    while True:
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            bugun = date.today()
+            # Vadesine 3 gün veya daha az kalmış aktif borçları bul
+            cur.execute(
+                "SELECT aciklama, kalan_tutar, vade_tarih FROM borclar "
+                "WHERE durum='Aktif' AND vade_tarih != '' AND vade_tarih IS NOT NULL"
+            )
+            for aciklama, kalan, vade_str in cur.fetchall():
+                try:
+                    # Tarih formatları: GG.AA.YYYY veya YYYY-MM-DD
+                    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+                        try:
+                            vade = datetime.strptime(vade_str, fmt).date()
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        continue
+                    kalan_gun = (vade - bugun).days
+                    if 0 <= kalan_gun <= 3:
+                        _bildirim_gonder(
+                            "⏰ Ödeme Yaklaşıyor!",
+                            f"{aciklama}\nKalan: {kalan:,.0f} ₺\n"
+                            f"Vade: {vade_str} ({kalan_gun} gün)"
+                        )
+                    elif kalan_gun < 0:
+                        _bildirim_gonder(
+                            "🔴 Vade Geçti!",
+                            f"{aciklama}\nKalan: {kalan:,.0f} ₺\n"
+                            f"Vade: {vade_str} (geçti)"
+                        )
+                except Exception:
+                    pass
+            conn.close()
+        except Exception:
+            pass
+        time.sleep(1800)  # 30 dakikada bir kontrol
+
+
+def _tray_olustur(app):
+    """Sistem tepsisi ikonu oluştur."""
+    if not HAS_TRAY:
+        return
+
+    icon_path = Path(__file__).parent / "assets" / "app_icon.ico"
+    if icon_path.exists():
+        image = PILImage.open(icon_path)
+    else:
+        image = PILImage.new("RGB", (64, 64), (37, 99, 235))
+
+    def on_show(icon, item):
+        app.after(0, app.deiconify)
+
+    def on_exit(icon, item):
+        icon.stop()
+        app.after(0, app._gercek_cikis)
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Fineding'i Göster", on_show, default=True),
+        pystray.MenuItem("Çıkış", on_exit),
+    )
+    icon = pystray.Icon("fineding", image, "Fineding", menu)
+
+    def run_tray():
+        icon.run()
+
+    tray_thread = threading.Thread(target=run_tray, daemon=True)
+    tray_thread.start()
+    return icon
+
+
+class FinedingApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("💰 Finans Defterim Pro")
+        self.title("Fineding")
         self.geometry("1400x800")
         self.minsize(1200, 700)
 
+        # System tray
+        self.tray_icon = None
+
+        # İkon
+        icon_path = Path(__file__).parent / "assets" / "app_icon.ico"
+        if icon_path.exists():
+            try:
+                self.iconbitmap(str(icon_path))
+            except Exception:
+                pass
+
         self.db = Database()
-        tema = self.db.ayar_oku("tema", "dark")
-        ctk.set_appearance_mode(tema)
+        ctk.set_appearance_mode("dark")
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self.menu = ctk.CTkFrame(self, width=220, corner_radius=0)
-
+        # Sol menü - logoya uygun teal arka plan
+        self.menu = ctk.CTkFrame(
+            self, width=240, corner_radius=0,
+            fg_color="#0f766e"
+        )
         self.menu.grid(row=0, column=0, sticky="ns")
+        self.menu.grid_propagate(False)
 
-        self.content = ctk.CTkFrame(self, corner_radius=0)
-
-        self.content.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-
+        # İçerik alanı
+        self.content = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.content.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
         self.content.grid_columnconfigure(0, weight=1)
         self.content.grid_rowconfigure(0, weight=1)
 
         self.menu_olustur()
-
         self.dashboard_ac()
 
     # =====================================
@@ -47,155 +185,289 @@ class FinansDefterim(ctk.CTk):
     # =====================================
 
     def menu_olustur(self):
+        # Logo alanı - logomuzu göster
+        logo_frame = ctk.CTkFrame(self.menu, fg_color="transparent")
+        logo_frame.pack(pady=(25, 20), fill="x")
+
+        icon_path = Path(__file__).parent / "assets" / "app_icon.ico"
+        if icon_path.exists():
+            self.logo_img = ctk.CTkImage(
+                light_image=PILImage.open(icon_path),
+                dark_image=PILImage.open(icon_path),
+                size=(60, 60)
+            )
+            ctk.CTkLabel(logo_frame, image=self.logo_img, text="").pack()
+
         ctk.CTkLabel(
-            self.menu, text="💰\nFinans\nDefterim", font=("Segoe UI", 28, "bold")
-        ).pack(pady=30)
+            logo_frame, text="FINEding",
+            font=("Segoe UI", 20, "bold"), text_color="#ccfbf1"
+        ).pack(pady=(4, 0))
 
-        self.btn_dashboard = ctk.CTkButton(
-            self.menu, text="🏠 Dashboard", height=45, command=self.dashboard_ac
-        )
-        self.btn_dashboard.pack(fill="x", padx=15, pady=6)
+        ctk.CTkLabel(
+            logo_frame, text="Finans Takip",
+            font=("Segoe UI", 11), text_color="#94a3b8"
+        ).pack()
 
-        self.btn_gelir = ctk.CTkButton(
-            self.menu, text="💰 Gelir", height=45, command=self.gelir_ac
-        )
-        self.btn_gelir.pack(fill="x", padx=15, pady=6)
+        # Ayraç
+        ctk.CTkFrame(
+            self.menu, height=1, fg_color="#334155"
+        ).pack(fill="x", padx=20, pady=(0, 15))
 
-        self.btn_gider = ctk.CTkButton(
-            self.menu, text="💸 Gider", height=45, command=self.gider_ac
-        )
-        self.btn_gider.pack(fill="x", padx=15, pady=6)
+        # Menü butonları
+        menu_ogeleri = [
+            ("🏠", "Dashboard", "Ctrl+D", self.dashboard_ac),
+            ("💰", "Gelir Ekle", "Ctrl+N", self.gelir_ac),
+            ("💸", "Gider Ekle", "Ctrl+Shift+N", self.gider_ac),
+            ("📊", "Grafikler", "Ctrl+Shift+G", self.grafikler_ac),
+            ("📄", "Raporlar", "Ctrl+R", self.raporlar_ac),
+            ("📅", "Bütçe", "Ctrl+B", self.butce_ac),
+            ("📋", "Planlama & Takip", "Ctrl+P", self.planlama_ac),
+        ]
 
-        self.btn_grafikler = ctk.CTkButton(
-            self.menu, text="📊 Grafikler", height=45, command=self.grafikler_ac
-        )
-        self.btn_grafikler.pack(fill="x", padx=15, pady=6)
+        self.menu_butonlari = []
+        for ikon, metin, kisayol, komut in menu_ogeleri:
+            btn = self._menu_butonu_olustur(ikon, metin, kisayol, komut)
+            self.menu_butonlari.append(btn)
 
-        self.btn_raporlar = ctk.CTkButton(
-            self.menu, text="📄 Raporlar", height=45, command=self.raporlar_ac
-        )
-        self.btn_raporlar.pack(fill="x", padx=15, pady=6)
+        # Alt ayraç
+        ctk.CTkFrame(
+            self.menu, height=1, fg_color="#334155"
+        ).pack(fill="x", padx=20, pady=(15, 15), side="bottom")
 
-        self.btn_butce = ctk.CTkButton(
-            self.menu, text="📅 Bütçe", height=45, command=self.butce_ac
+        # Ayarlar butonu (altta)
+        self.btn_ayarlar = self._menu_butonu_olustur(
+            "⚙️", "Ayarlar", "Ctrl+,", self.ayarlar_ac, alt=True
         )
-        self.btn_butce.pack(fill="x", padx=15, pady=6)
+        self._menu_butonu_olustur(
+            "ℹ️", "Hakkında", "", self.hakkinda_ac, alt=True
+        )
 
-        self.btn_ayarlar = ctk.CTkButton(
-            self.menu, text="⚙️ Ayarlar", height=45, command=self.ayarlar_ac
+        # Klavye kısayolları
+        self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
+        self.bind_all("<Control-n>", lambda e: self.gelir_ac())
+        self.bind_all("<Control-N>", lambda e: self.gider_ac())
+        self.bind_all("<Control-G>", lambda e: self.grafikler_ac())
+        self.bind_all("<Control-r>", lambda e: self.raporlar_ac())
+        self.bind_all("<Control-b>", lambda e: self.butce_ac())
+        self.bind_all("<Control-p>", lambda e: self.planlama_ac())
+        self.bind_all("<Control-comma>", lambda e: self.ayarlar_ac())
+        self.bind_all("<Control-q>", lambda e: self.cikis())
+
+    def _menu_butonu_olustur(self, ikon, metin, kisayol, komut, alt=False):
+        frame = ctk.CTkFrame(self.menu, fg_color="transparent")
+        if alt:
+            frame.pack(fill="x", padx=10, pady=3, side="bottom")
+        else:
+            frame.pack(fill="x", padx=10, pady=3)
+
+        btn = ctk.CTkButton(
+            frame,
+            text=f"  {ikon}  {metin}",
+            font=("Segoe UI", 14),
+            height=42,
+            anchor="w",
+            fg_color="transparent",
+            hover_color="#0d9488",
+            text_color="#cbd5e1",
+            corner_radius=10,
+            command=komut,
         )
-        self.btn_ayarlar.pack(fill="x", padx=15, pady=6)
+        btn.pack(fill="x")
+
+        # Hover efekti
+        def on_enter(e, b=btn):
+            b.configure(fg_color="#0d9488", text_color="#ffffff")
+        def on_leave(e, b=btn):
+            b.configure(fg_color="transparent", text_color="#cbd5e1")
+
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+
+        return btn
+
+    # =====================================
+    # SAYFA GEÇİŞ ANİMASYONU
+    # =====================================
+
+    def _sayfa_degistir(self, sayfa_sinifi, **kwargs):
+        self.temizle()
+        sayfa = sayfa_sinifi(self.content, self.db, **kwargs)
+        sayfa.grid(row=0, column=0, sticky="nsew")
+        # Basit fade-in efekti
+        sayfa.configure(fg_color=self.content.cget("fg_color"))
+        for _ in range(3):
+            self.update_idletasks()
 
     # =====================================
     # SAYFA TEMİZLE
     # =====================================
 
     def temizle(self):
-        for widget in self.content.winfo_children():
+        for widget in list(self.content.winfo_children()):
             widget.destroy()
+
+    def _guvenli_gecis(self, sayfa_sinifi, **kwargs):
+        """Sayfa değiştir - öncekini yok et, yenisini oluştur."""
+        # Önceki zamanlanmış geçişi iptal et
+        if hasattr(self, '_gecis_after_id'):
+            self.after_cancel(self._gecis_after_id)
+
+        try:
+            for widget in list(self.content.winfo_children()):
+                widget.destroy()
+        except Exception:
+            pass
+
+        def _olustur():
+            try:
+                sayfa = sayfa_sinifi(self.content, self.db, **kwargs)
+                sayfa.grid(row=0, column=0, sticky="nsew")
+            except Exception as e:
+                logger.error(f"Sayfa hatası: {sayfa_sinifi.__name__} - {e}")
+                try:
+                    self.dashboard_ac()
+                except Exception:
+                    pass
+            self._gecis_after_id = None
+
+        self._gecis_after_id = self.after(10, _olustur)
 
     # =====================================
     # DASHBOARD
     # =====================================
 
     def dashboard_ac(self):
-        self.temizle()
-
-        self.dashboard = Dashboard(self.content, self.db)
-
-        self.dashboard.grid(row=0, column=0, sticky="nsew")
+        self._guvenli_gecis(Dashboard)
 
     # =====================================
     # GELİR SAYFASI
     # =====================================
 
     def gelir_ac(self):
-        self.temizle()
-
-        self.gelir = GelirSayfasi(
-            self.content, self.db, dashboard_callback=self.dashboard_ac
-        )
-
-        self.gelir.grid(row=0, column=0, sticky="nsew")
+        self._guvenli_gecis(GelirSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
     # GİDER SAYFASI
     # =====================================
 
     def gider_ac(self):
-        self.temizle()
-
-        self.gider = GiderSayfasi(
-            self.content, self.db, dashboard_callback=self.dashboard_ac
-        )
-
-        self.gider.grid(row=0, column=0, sticky="nsew")
+        self._guvenli_gecis(GiderSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
     # RAPORLAR
     # =====================================
 
     def raporlar_ac(self):
-        self.temizle()
-
-        self.raporlar = RaporlarSayfasi(
-            self.content, self.db, dashboard_callback=self.dashboard_ac
-        )
-
-        self.raporlar.grid(row=0, column=0, sticky="nsew")
+        self._guvenli_gecis(RaporlarSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
     # BÜTÇE
     # =====================================
 
     def butce_ac(self):
-        self.temizle()
+        self._guvenli_gecis(ButceSayfasi, dashboard_callback=self.dashboard_ac)
 
-        self.butce = ButceSayfasi(
-            self.content, self.db, dashboard_callback=self.dashboard_ac
-        )
+    # =====================================
+    # PLANLAMA
+    # =====================================
 
-        self.butce.grid(row=0, column=0, sticky="nsew")
+    def planlama_ac(self):
+        self._guvenli_gecis(PlanlamaSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
     # GRAFİKLER
     # =====================================
 
     def grafikler_ac(self):
-        self.temizle()
-
-        self.grafikler = GrafiklerSayfasi(
-            self.content, self.db, dashboard_callback=self.dashboard_ac
-        )
-
-        self.grafikler.grid(row=0, column=0, sticky="nsew")
+        self._guvenli_gecis(GrafiklerSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
     # AYARLAR
     # =====================================
 
     def ayarlar_ac(self):
-        self.temizle()
-
-        self.ayarlar = AyarlarSayfasi(
-            self.content, self.db, dashboard_callback=self.dashboard_ac
+        self._guvenli_gecis(
+            AyarlarSayfasi,
+            dashboard_callback=self.dashboard_ac,
+            hesap_degistir_callback=self.hesap_degistir,
         )
 
-        self.ayarlar.grid(row=0, column=0, sticky="nsew")
+    # =====================================
+    # HAKKINDA
+    # =====================================
+
+    def hakkinda_ac(self):
+        self._guvenli_gecis(HakkindaSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
     # ÇIKIŞ
     # =====================================
 
     def cikis(self):
-        self.db.close()
+        """X tuşuna basınca kapatmak yerine tepsiye küçült."""
+        self.withdraw()
+        if HAS_TRAY:
+            from plyer import notification
+            try:
+                notification.notify(
+                    title="Fineding",
+                    message="Arka planda çalışmaya devam ediyor.\nTamamen kapatmak için tepsi simgesine sağ tıklayın.",
+                    app_name="Fineding",
+                    timeout=4,
+                )
+            except Exception:
+                pass
 
+    def _gercek_cikis(self):
+        """Tamamen kapat."""
+        self.db.close()
+        if self.tray_icon:
+            self.tray_icon.stop()
         self.destroy()
+
+    def hesap_degistir(self):
+        """Oturumu kapatıp giriş ekranına dön."""
+        self.db.ayar_kaydet("beni_hatirla_kullanici", "")
+        self.db.ayar_kaydet("aktif_kullanici_id", "")
+        self.db.close()
+        self.destroy()
+        baslat()
+
+
+def baslat():
+    """Uygulamayı giriş ekranıyla başlat."""
+    logger.info("Fineding başlatılıyor...")
+    db = Database()
+    logger.info("Veritabanı bağlantısı kuruldu")
+
+    # Arka plan borç kontrolü başlat
+    import database as db_module
+    kontrol = threading.Thread(
+        target=_borc_kontrol_thread,
+        args=(str(db_module.DB_PATH),),
+        daemon=True,
+    )
+    kontrol.start()
+
+    def on_login(kullanici):
+        app = FinedingApp()
+        app.protocol("WM_DELETE_WINDOW", app.cikis)
+
+        # Sistem tepsisi
+        app.tray_icon = _tray_olustur(app)
+
+        # İlk bildirim
+        _bildirim_gonder(
+            "Fineding'e Hoş Geldiniz! 👋",
+            f"Merhaba {kullanici['ad_soyad']}, finansal takibiniz başladı.\n"
+            "Ödemeler yaklaştığında sizi uyaracağız."
+        )
+        app.mainloop()
+
+    giris = GirisEkrani(db, on_login)
+    giris.protocol("WM_DELETE_WINDOW", lambda: (db.close(), giris.destroy()))
+    giris.mainloop()
 
 
 if __name__ == "__main__":
-    app = FinansDefterim()
-
-    app.protocol("WM_DELETE_WINDOW", app.cikis)
-
-    app.mainloop()
+    baslat()

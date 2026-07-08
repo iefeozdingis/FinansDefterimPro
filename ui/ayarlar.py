@@ -1,38 +1,181 @@
 from tkinter import filedialog, messagebox
+from typing import Optional, Callable, Any
 
-import customtkinter as ctk
+import customtkinter as ctk  # type: ignore
 
 
 class AyarlarSayfasi(ctk.CTkFrame):
-    def __init__(self, parent, db, dashboard_callback=None):
-        super().__init__(parent)
+    def __init__(self, parent: Any, db: Any,
+                 dashboard_callback: Optional[Callable[[], None]] = None,
+                 hesap_degistir_callback: Optional[Callable[[], None]] = None) -> None:
+        super().__init__(parent, fg_color="transparent")  # type: ignore
         self.db = db
         self.dashboard_callback = dashboard_callback
+        self.hesap_degistir_callback = hesap_degistir_callback
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        ctk.CTkLabel(self, text="⚙️ Ayarlar", font=("Segoe UI", 28, "bold")).pack(
-            pady=20
+        # Ana kart
+        kart = ctk.CTkFrame(
+            self, corner_radius=20, fg_color="#134e4a",
+            border_width=1, border_color="#14b8a6"
         )
+        kart.pack(pady=30, padx=60, fill="both", expand=True)
 
-        ctk.CTkLabel(self, text="Tema", font=("Segoe UI", 14)).pack(pady=(10, 4))
-        self.tema = ctk.CTkComboBox(self, width=260, values=["dark", "light", "system"])
-        self.tema.set(self.db.ayar_oku("tema", "dark"))
-        self.tema.pack(pady=8)
+        ctk.CTkLabel(
+            kart, text="⚙️  Ayarlar",
+            font=("Segoe UI", 30, "bold"), text_color="#5eead4"
+        ).pack(pady=(30, 5))
+
+        # Kullanıcı bilgisi
+        kullanici_adi = self.db.ayar_oku("aktif_kullanici_adi", "Bilinmiyor")
+        ctk.CTkLabel(
+            kart, text=f"👤  {kullanici_adi}",
+            font=("Segoe UI", 16, "bold"), text_color="#2dd4bf"
+        ).pack(pady=(0, 20))
+
+        # Ayraç
+        ctk.CTkFrame(kart, height=1, fg_color="#334155").pack(fill="x", padx=40, pady=(0, 15))
 
         ctk.CTkButton(
-            self, text="💾 Ayarları Kaydet", width=220, command=self.kaydet
-        ).pack(pady=16)
+            kart, text="🗂 Yedek Oluştur", width=220, command=self.yedek_olustur
+        ).pack(pady=8)  # type: ignore
         ctk.CTkButton(
-            self, text="🗂 Yedek Oluştur", width=220, command=self.yedek_olustur
-        ).pack(pady=8)
-        ctk.CTkButton(
-            self, text="♻️ Yedeği Geri Yükle", width=220, command=self.yedek_geri_yukle
-        ).pack(pady=8)
+            kart, text="♻️ Yedeği Geri Yükle",
+            width=220, command=self.yedek_geri_yukle
+        ).pack(pady=8)  # type: ignore
 
-    def kaydet(self):
-        self.db.ayar_kaydet("tema", self.tema.get())
-        ctk.set_appearance_mode(self.tema.get())
-        messagebox.showinfo("Başarılı", "Ayarlar kaydedildi.")
+        # Ayraç
+        ctk.CTkFrame(kart, height=1, fg_color="#334155").pack(fill="x", padx=40, pady=15)
+
+        ctk.CTkLabel(
+            kart, text="Hesap İşlemleri",
+            font=("Segoe UI", 14, "bold"), text_color="#94a3b8"
+        ).pack()
+
+        ctk.CTkButton(
+            kart, text="� Profil Düzenle", width=220,
+            fg_color="#0ea5e9", command=self._profil_duzenle
+        ).pack(pady=6)  # type: ignore
+
+        ctk.CTkButton(
+            kart, text="�🔒 Şifre Değiştir", width=220,
+            fg_color="#6366f1", command=self._sifre_degistir
+        ).pack(pady=6)  # type: ignore
+
+        ctk.CTkButton(
+            kart, text="🔄 Hesap Değiştir", width=220,
+            fg_color="#f59e0b", hover_color="#d97706",
+            command=self._hesap_degistir
+        ).pack(pady=6)  # type: ignore
+
+        # Ayraç
+        ctk.CTkFrame(kart, height=1, fg_color="#334155").pack(fill="x", padx=40, pady=10)
+
+        ctk.CTkLabel(
+            kart, text="Sistem",
+            font=("Segoe UI", 14, "bold"), text_color="#94a3b8"
+        ).pack()
+
+        ctk.CTkButton(
+            kart, text="🔔 Bildirim Testi", width=220,
+            fg_color="#0ea5e9", command=self._bildirim_test
+        ).pack(pady=6)  # type: ignore
+
+        # --- Admin Paneli (sadece admin görebilir) ---
+        kullanici_id_str = self.db.ayar_oku("aktif_kullanici_id", "0")
+        if kullanici_id_str and int(kullanici_id_str) == 1:
+            ctk.CTkFrame(kart, height=1, fg_color="#f59e0b").pack(fill="x", padx=40, pady=10)
+
+            ctk.CTkLabel(
+                kart, text="👑 Admin — Kullanıcı Yönetimi",
+                font=("Segoe UI", 14, "bold"), text_color="#fbbf24"
+            ).pack(pady=(5, 10))
+
+            self._admin_kullanici_listesi(kart)
+
+    def _admin_kullanici_listesi(self, kart):
+        """Admin için kullanıcı listesini göster."""
+        kullanicilar = self.db.kullanici_listele()
+
+        liste_frame = ctk.CTkScrollableFrame(kart, height=160, fg_color="#0f172a")
+        liste_frame.pack(fill="x", padx=40, pady=(0, 8))
+
+        for k in kullanicilar:
+            row = ctk.CTkFrame(liste_frame, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+
+            admin_badge = " 👑" if k["id"] == 1 else ""
+            ctk.CTkLabel(
+                row, text=f'{k["kullanici_adi"]}{admin_badge} — {k["ad_soyad"]}',
+                font=("Segoe UI", 12), text_color="#cbd5e1"
+            ).pack(side="left", padx=(5, 10))
+
+            if k["id"] != 1:  # Admin kendini silemez
+                ctk.CTkButton(
+                    row, text="🔑 Şifre Sıfırla", width=100, height=28,
+                    font=("Segoe UI", 11), fg_color="#6366f1",
+                    command=lambda kid=k["id"]: self._admin_sifre_sifirla(kid)
+                ).pack(side="right", padx=2)
+                ctk.CTkButton(
+                    row, text="🗑️ Sil", width=60, height=28,
+                    font=("Segoe UI", 11), fg_color="#c0392b",
+                    command=lambda kid=k["id"], kad=k["kullanici_adi"]: self._admin_kullanici_sil(kid, kad)
+                ).pack(side="right", padx=2)
+
+    def _admin_sifre_sifirla(self, kullanici_id):
+        from tkinter import simpledialog
+        yeni = simpledialog.askstring(
+            "Şifre Sıfırla", "Yeni şifreyi girin (en az 3 karakter):", parent=self
+        )
+        if yeni and len(yeni) >= 3:
+            self.db.kullanici_sifre_degistir(kullanici_id, yeni)
+            messagebox.showinfo("Başarılı", "Kullanıcının şifresi sıfırlandı.")
+        elif yeni:
+            messagebox.showerror("Hata", "Şifre en az 3 karakter olmalıdır.")
+
+    def _admin_kullanici_sil(self, kullanici_id, kullanici_adi):
+        if messagebox.askyesno(
+            "Kullanıcıyı Sil",
+            f"'{kullanici_adi}' kullanıcısını silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz!"
+        ):
+            if self.db.kullanici_sil(kullanici_id):
+                messagebox.showinfo("Başarılı", f"'{kullanici_adi}' silindi.")
+                # Sayfayı yenile
+                self.destroy()
+                self.__init__(self.master, self.db, self.dashboard_callback, self.hesap_degistir_callback)
+                self.grid(row=0, column=0, sticky="nsew")
+            else:
+                messagebox.showerror("Hata", "Admin kullanıcısı silinemez!")
+
+    def _bildirim_test(self):
+        try:
+            from plyer import notification
+            notification.notify(
+                title="🧪 Fineding — Test Bildirimi",
+                message="Bildirim sistemi çalışıyor!\nBorç vadesi yaklaştığında böyle uyarı alacaksın.",
+                app_name="Fineding",
+                timeout=8,
+            )
+            messagebox.showinfo("Başarılı", "Bildirim gönderildi!\nSağ alt köşeyi kontrol et.")
+        except Exception as e:
+            messagebox.showerror("Hata", f"Bildirim gönderilemedi:\n{e}\n\n"
+                                          "Windows Ayarlar > Sistem > Bildirimler kısmından\n"
+                                          "Python için bildirimleri açık olduğundan emin ol.")
+
+    def _sifre_degistir(self):
+        SifreDegistirPenceresi(self, self.db)
+
+    def _profil_duzenle(self):
+        ProfilDuzenlePenceresi(self, self.db)
+
+    def _hesap_degistir(self):
+        if messagebox.askyesno(
+            "Hesap Değiştir",
+            "Oturum kapatılıp giriş ekranına dönülecek. Emin misiniz?"
+        ):
+            if self.hesap_degistir_callback:
+                self.hesap_degistir_callback()
 
     def yedek_olustur(self):
         yol = filedialog.asksaveasfilename(
@@ -49,3 +192,135 @@ class AyarlarSayfasi(ctk.CTkFrame):
         if yol:
             self.db.geri_yukle(yol)
             messagebox.showinfo("Başarılı", "Yedek geri yüklendi.")
+
+
+class SifreDegistirPenceresi(ctk.CTkToplevel):
+    """Şifre değiştirme penceresi."""
+
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        self.title("Şifre Değiştir")
+        self.geometry("380x320")
+        self.resizable(False, False)
+
+        # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+        self.lift()
+        self.focus_force()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        ctk.CTkLabel(
+            self, text="🔒 Şifre Değiştir",
+            font=("Segoe UI", 20, "bold")
+        ).pack(pady=20)
+
+        self.eski_sifre = ctk.CTkEntry(
+            self, width=280, placeholder_text="Mevcut Şifre",
+            font=("Segoe UI", 13), show="•"
+        )
+        self.eski_sifre.pack(pady=8)
+
+        self.yeni_sifre = ctk.CTkEntry(
+            self, width=280, placeholder_text="Yeni Şifre",
+            font=("Segoe UI", 13), show="•"
+        )
+        self.yeni_sifre.pack(pady=8)
+
+        self.yeni_tekrar = ctk.CTkEntry(
+            self, width=280, placeholder_text="Yeni Şifre (Tekrar)",
+            font=("Segoe UI", 13), show="•"
+        )
+        self.yeni_tekrar.pack(pady=8)
+
+        ctk.CTkButton(
+            self, text="💾 Şifreyi Güncelle", width=220,
+            fg_color="#6366f1", command=self._guncelle
+        ).pack(pady=16)
+
+    def _guncelle(self):
+        eski = self.eski_sifre.get()
+        yeni = self.yeni_sifre.get()
+        yeni2 = self.yeni_tekrar.get()
+
+        kullanici_adi = self.db.ayar_oku("aktif_kullanici_adi", "")
+        if not self.db.kullanici_dogrula(kullanici_adi, eski):
+            messagebox.showerror("Hata", "Mevcut şifre hatalı!")
+            return
+        if yeni != yeni2:
+            messagebox.showerror("Hata", "Yeni şifreler eşleşmiyor!")
+            return
+        if len(yeni) < 3:
+            messagebox.showerror("Hata", "Şifre en az 3 karakter olmalıdır.")
+            return
+
+        kullanici_id_str = self.db.ayar_oku("aktif_kullanici_id", "0")
+        if not kullanici_id_str or kullanici_id_str == "0":
+            messagebox.showerror("Hata", "Kullanıcı bilgisi bulunamadı.")
+            self.destroy()
+            return
+        kullanici_id = int(kullanici_id_str)
+        self.db.kullanici_sifre_degistir(kullanici_id, yeni)
+        messagebox.showinfo("Başarılı", "Şifre güncellendi!")
+        self.destroy()
+
+
+class ProfilDuzenlePenceresi(ctk.CTkToplevel):
+    """Profil düzenleme penceresi."""
+
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        self.title("Profil Düzenle")
+        self.geometry("380x260")
+        self.resizable(False, False)
+
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+        self.lift()
+        self.focus_force()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        ctk.CTkLabel(
+            self, text="👤 Profil Düzenle",
+            font=("Segoe UI", 20, "bold")
+        ).pack(pady=20)
+
+        mevcut_ad = self.db.ayar_oku("aktif_kullanici_adi", "")
+        ctk.CTkLabel(
+            self, text=f"Kullanıcı: {mevcut_ad}",
+            font=("Segoe UI", 12), text_color="#94a3b8"
+        ).pack()
+
+        # Mevcut adı veritabanından oku
+        k_id = self.db.ayar_oku("aktif_kullanici_id", "0")
+        mevcut_isim = self.db.kullanici_ad_oku(int(k_id)) if k_id and k_id != "0" else ""
+
+        self.ad_soyad = ctk.CTkEntry(
+            self, width=280, placeholder_text="👤 Ad Soyad",
+            font=("Segoe UI", 13)
+        )
+        self.ad_soyad.insert(0, mevcut_isim)
+        self.ad_soyad.pack(pady=12)
+
+        ctk.CTkButton(
+            self, text="💾 Kaydet", width=220,
+            fg_color="#0ea5e9", command=self._guncelle
+        ).pack(pady=12)
+
+    def _guncelle(self):
+        yeni_ad = self.ad_soyad.get().strip()
+        if not yeni_ad:
+            messagebox.showerror("Hata", "Ad soyad boş olamaz.")
+            return
+
+        kullanici_id_str = self.db.ayar_oku("aktif_kullanici_id", "0")
+        if not kullanici_id_str or kullanici_id_str == "0":
+            messagebox.showerror("Hata", "Kullanıcı bilgisi bulunamadı.")
+            self.destroy()
+            return
+
+        self.db.kullanici_profil_guncelle(int(kullanici_id_str), yeni_ad)
+        messagebox.showinfo("Başarılı", f"Profil güncellendi: {yeni_ad}")
+        self.destroy()

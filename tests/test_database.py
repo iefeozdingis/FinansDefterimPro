@@ -46,10 +46,13 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(durum[0]["kalan"], 100.0)
 
     def test_user_authentication(self):
-        # Varsayılan admin kullanıcısı oluşmuş olmalı
+        # İlk kullanıcıyı oluştur (admin)
+        self.assertTrue(self.db.kullanici_kaydet("admin", "admin", "Yönetici"))
         kullanici = self.db.kullanici_dogrula("admin", "admin")
         self.assertIsNotNone(kullanici)
         self.assertEqual(kullanici["kullanici_adi"], "admin")
+        # İlk kullanıcı admin olmalı
+        self.assertTrue(self.db.kullanici_admin_mi(kullanici["id"]))
 
         # Yanlış şifre
         self.assertIsNone(self.db.kullanici_dogrula("admin", "yanlis"))
@@ -66,6 +69,11 @@ class DatabaseTests(unittest.TestCase):
         self.db.kullanici_sifre_degistir(k["id"], "yenisifre")
         self.assertIsNone(self.db.kullanici_dogrula("test", "12345"))
         self.assertIsNotNone(self.db.kullanici_dogrula("test", "yenisifre"))
+
+        # Admin kendini silemez
+        self.assertFalse(self.db.kullanici_sil(1))
+        # Normal kullanıcı silinebilir
+        self.assertTrue(self.db.kullanici_sil(k["id"]))
 
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)

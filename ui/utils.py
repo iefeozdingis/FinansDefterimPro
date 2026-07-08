@@ -6,8 +6,9 @@ def tarih_formatla(event=None):
     widget = event.widget
 
     # Backspace/Delete ise formatlama yapma, kullanıcının silmesine izin ver
-    if event and event.keysym in ("BackSpace", "Delete", "Left", "Right",
-                                    "Home", "End", "Tab"):
+    if event and event.keysym in (
+        "BackSpace", "Delete", "Left", "Right", "Home", "End", "Tab"
+    ):
         return
 
     metin = "".join(c for c in widget.get() if c.isdigit())

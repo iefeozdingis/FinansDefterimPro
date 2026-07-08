@@ -277,6 +277,7 @@ class FinedingApp(ctk.CTk):
         # Hover efekti
         def on_enter(e, b=btn):
             b.configure(fg_color="#0d9488", text_color="#ffffff")
+
         def on_leave(e, b=btn):
             b.configure(fg_color="transparent", text_color="#cbd5e1")
 

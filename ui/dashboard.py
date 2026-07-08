@@ -150,8 +150,10 @@ class Dashboard(ctk.CTkFrame):
         # Hover efekti + tıklama
         def on_enter(e, f=frame, a=acik):
             f.configure(border_width=2, border_color="#ffffff")
+
         def on_leave(e, f=frame, a=acik):
             f.configure(border_width=1, border_color=a)
+
         def on_click(e, icon=icon):
             top = self.winfo_toplevel()
             if icon == "💰" and hasattr(top, 'gelir_ac'):

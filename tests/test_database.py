@@ -100,7 +100,7 @@ class DatabaseTests(unittest.TestCase):
             "Borç", "Kredi Kartı", "Banka A", 10000, 7500,
             "01.06.2026", "01.12.2026"
         )
-        alacak_id = self.db.borc_ekle(
+        self.db.borc_ekle(
             "Alacak", "Maaş", "Şirket", 20000, 20000,
             "01.07.2026", "01.07.2026"
         )

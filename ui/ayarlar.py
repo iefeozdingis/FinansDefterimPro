@@ -159,9 +159,12 @@ class AyarlarSayfasi(ctk.CTkFrame):
             )
             messagebox.showinfo("Başarılı", "Bildirim gönderildi!\nSağ alt köşeyi kontrol et.")
         except Exception as e:
-            messagebox.showerror("Hata", f"Bildirim gönderilemedi:\n{e}\n\n"
-                                          "Windows Ayarlar > Sistem > Bildirimler kısmından\n"
-                                          "Python için bildirimleri açık olduğundan emin ol.")
+            msg = (
+                f"Bildirim gönderilemedi:\n{e}\n\n"
+                "Windows Ayarlar > Sistem > Bildirimler "
+                "kısmından Python bildirimlerini kontrol et."
+            )
+            messagebox.showerror("Hata", msg)
 
     def _sifre_degistir(self):
         SifreDegistirPenceresi(self, self.db)

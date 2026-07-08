@@ -130,7 +130,7 @@ class RaporlarSayfasi(ctk.CTkFrame):
 
             # Başlık
             title = Paragraph(
-                f"<b>Fineding - Finansal Rapor</b>",
+                "<b>Fineding - Finansal Rapor</b>",
                 styles["Title"],
             )
             elements.append(title)

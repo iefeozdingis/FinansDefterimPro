@@ -1,6 +1,6 @@
 from pathlib import Path
 
-p = r'c:\Users\Ozdin\OneDrive\Masaüstü\FinansDefterimPro\.github\workflows\ci.yml'
+p = r'c:\Users\Ozdin\OneDrive\Masaüstü\FINEding\.github\workflows\ci.yml'
 p_path = Path(p)
 if not p_path.exists():
     print('File not found:', p)

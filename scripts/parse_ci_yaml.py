@@ -2,7 +2,7 @@ import sys
 import json
 import subprocess
 
-p = r'c:\Users\Ozdin\OneDrive\Masaüstü\FinansDefterimPro\.github\workflows\ci.yml'
+p = r'c:\Users\Ozdin\OneDrive\Masaüstü\FINEding\.github\workflows\ci.yml'
 try:
     import yaml
 except Exception:

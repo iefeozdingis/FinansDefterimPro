@@ -7,7 +7,13 @@ def tarih_formatla(event=None):
 
     # Backspace/Delete ise formatlama yapma, kullanıcının silmesine izin ver
     if event and event.keysym in (
-        "BackSpace", "Delete", "Left", "Right", "Home", "End", "Tab"
+        "BackSpace",
+        "Delete",
+        "Left",
+        "Right",
+        "Home",
+        "End",
+        "Tab",
     ):
         return
 

@@ -1,4 +1,5 @@
 """Planlama & Takip sayfası — düzenlenebilir tablo, borç/alacak takibi."""
+
 from datetime import datetime
 from tkinter import messagebox, ttk
 
@@ -18,7 +19,8 @@ class PlanlamaSayfasi(ctk.CTkFrame):
 
         # Sekmeli yapı
         self.tabview = ctk.CTkTabview(
-            self, corner_radius=16,
+            self,
+            corner_radius=16,
             fg_color="#134e4a",
             segmented_button_fg_color="#0f766e",
             segmented_button_selected_color="#0d9488",
@@ -47,19 +49,27 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         bar.grid_columnconfigure(5, weight=1)
 
         simdi = datetime.now()
-        ctk.CTkLabel(bar, text="Ay:", font=("Segoe UI", 14)).grid(row=0, column=0, padx=(0, 5))
+        ctk.CTkLabel(bar, text="Ay:", font=("Segoe UI", 14)).grid(
+            row=0, column=0, padx=(0, 5)
+        )
         self.p_ay = ctk.CTkEntry(bar, width=50, font=("Segoe UI", 14))
         self.p_ay.insert(0, str(simdi.month))
         self.p_ay.grid(row=0, column=1, padx=(0, 10))
 
-        ctk.CTkLabel(bar, text="Yıl:", font=("Segoe UI", 14)).grid(row=0, column=2, padx=(0, 5))
+        ctk.CTkLabel(bar, text="Yıl:", font=("Segoe UI", 14)).grid(
+            row=0, column=2, padx=(0, 5)
+        )
         self.p_yil = ctk.CTkEntry(bar, width=70, font=("Segoe UI", 14))
         self.p_yil.insert(0, str(simdi.year))
         self.p_yil.grid(row=0, column=3, padx=(0, 10))
 
         ctk.CTkButton(
-            bar, text="🔄 Göster", width=90, height=32,
-            fg_color="#0d9488", command=self._planlama_yenile
+            bar,
+            text="🔄 Göster",
+            width=90,
+            height=32,
+            fg_color="#0d9488",
+            command=self._planlama_yenile,
         ).grid(row=0, column=4, padx=(0, 5))
 
         # Özet
@@ -78,23 +88,39 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         btn_bar.grid(row=2, column=0, sticky="ew", padx=15, pady=5)
 
         ctk.CTkButton(
-            btn_bar, text="➕ Satır Ekle", width=120, height=30,
-            fg_color="#2e8b57", command=self._satir_ekle
+            btn_bar,
+            text="➕ Satır Ekle",
+            width=120,
+            height=30,
+            fg_color="#2e8b57",
+            command=self._satir_ekle,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
-            btn_bar, text="🗑 Seçileni Sil", width=120, height=30,
-            fg_color="#c0392b", command=self._satir_sil
+            btn_bar,
+            text="🗑 Seçileni Sil",
+            width=120,
+            height=30,
+            fg_color="#c0392b",
+            command=self._satir_sil,
         ).pack(side="left")
 
         ctk.CTkButton(
-            btn_bar, text="📋 Planı Gerçeğe Aktar", width=180, height=30,
-            fg_color="#8b5cf6", command=self._plani_aktar
+            btn_bar,
+            text="📋 Planı Gerçeğe Aktar",
+            width=180,
+            height=30,
+            fg_color="#8b5cf6",
+            command=self._plani_aktar,
         ).pack(side="right")
 
         ctk.CTkButton(
-            btn_bar, text="📝 Önceki Aydan Kopyala", width=180, height=30,
-            fg_color="#0ea5e9", command=self._kopyala
+            btn_bar,
+            text="📝 Önceki Aydan Kopyala",
+            width=180,
+            height=30,
+            fg_color="#0ea5e9",
+            command=self._kopyala,
         ).pack(side="right", padx=(0, 8))
 
         # Düzenlenebilir tablo
@@ -132,15 +158,22 @@ class PlanlamaSayfasi(ctk.CTkFrame):
 
         for satir in self.db.planlanan_listele(ay, yil):
             self.p_tablo.insert(
-                "", "end",
-                values=(satir[0], satir[3], satir[4], satir[5] or "", f"{satir[6]:,.2f}"),
+                "",
+                "end",
+                values=(
+                    satir[0],
+                    satir[3],
+                    satir[4],
+                    satir[5] or "",
+                    f"{satir[6]:,.2f}",
+                ),
             )
 
         ozet = self.db.planlanan_ozet(ay, yil)
         net = ozet["Gelir"] - ozet["Gider"]
         self.p_ozet.configure(
             text=f"📥 {ozet['Gelir']:,.0f} ₺  |  📤 {ozet['Gider']:,.0f} ₺  |  "
-                 f"{'✅' if net >= 0 else '🔴'} Net: {net:,.0f} ₺"
+            f"{'✅' if net >= 0 else '🔴'} Net: {net:,.0f} ₺"
         )
 
     def _satir_ekle(self):
@@ -155,8 +188,12 @@ class PlanlamaSayfasi(ctk.CTkFrame):
 
     def _kaydet_yeni(self, pencere, data):
         self.db.planlanan_ekle(
-            data["ay"], data["yil"], data["kategori"],
-            data["tur"], data["aciklama"], data["tutar"],
+            data["ay"],
+            data["yil"],
+            data["kategori"],
+            data["tur"],
+            data["aciklama"],
+            data["tutar"],
         )
         pencere.destroy()
         self._planlama_yenile()
@@ -196,7 +233,10 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         # Entry oluştur
         x, y, w, h = self.p_tablo.bbox(item, col)
         self._edit_entry = ctk.CTkEntry(
-            self.p_tablo, width=w, height=h, font=("Segoe UI", 12),
+            self.p_tablo,
+            width=w,
+            height=h,
+            font=("Segoe UI", 12),
         )
         self._edit_entry.place(x=x, y=y)
         self._edit_entry.insert(0, str(veri[col_idx]))
@@ -270,7 +310,7 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         if not messagebox.askyesno(
             "Aktar",
             f"{len(plan)} planlı işlem gerçek işlemlere aktarılsın mı?\n"
-            "Tarih olarak ayın 1'i kullanılacak."
+            "Tarih olarak ayın 1'i kullanılacak.",
         ):
             return
 
@@ -306,26 +346,30 @@ class PlanlamaSayfasi(ctk.CTkFrame):
 
         onceki = self.db.planlanan_listele(onceki_ay, onceki_yil)
         if not onceki:
-            messagebox.showwarning("Uyarı",
-                                   f"{onceki_ay:02d}.{onceki_yil} için plan bulunamadı.")
+            messagebox.showwarning(
+                "Uyarı", f"{onceki_ay:02d}.{onceki_yil} için plan bulunamadı."
+            )
             return
 
         mevcut = self.db.planlanan_listele(ay, yil)
         if mevcut:
-            if not messagebox.askyesno("Uyarı",
-                                       "Bu ay için zaten plan var. Üzerine yazılsın mı?"):
+            if not messagebox.askyesno(
+                "Uyarı", "Bu ay için zaten plan var. Üzerine yazılsın mı?"
+            ):
                 return
             for m in mevcut:
                 self.db.planlanan_sil(m[0])
 
         eklenen = 0
         for satir in onceki:
-            self.db.planlanan_ekle(ay, yil, satir[3], satir[4],
-                                   satir[5] or "", satir[6])
+            self.db.planlanan_ekle(
+                ay, yil, satir[3], satir[4], satir[5] or "", satir[6]
+            )
             eklenen += 1
 
-        messagebox.showinfo("Başarılı",
-                            f"{eklenen} plan kalemi {ay:02d}.{yil} ayına kopyalandı.")
+        messagebox.showinfo(
+            "Başarılı", f"{eklenen} plan kalemi {ay:02d}.{yil} ayına kopyalandı."
+        )
         self._planlama_yenile()
 
     # =========================================
@@ -342,18 +386,30 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         btn_bar.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 5))
 
         ctk.CTkButton(
-            btn_bar, text="➕ Yeni Borç/Alacak", width=160, height=32,
-            fg_color="#0d9488", command=self._borc_ekle_ac
+            btn_bar,
+            text="➕ Yeni Borç/Alacak",
+            width=160,
+            height=32,
+            fg_color="#0d9488",
+            command=self._borc_ekle_ac,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
-            btn_bar, text="✏ Düzenle", width=100, height=32,
-            fg_color="#f59e0b", command=self._borc_duzenle
+            btn_bar,
+            text="✏ Düzenle",
+            width=100,
+            height=32,
+            fg_color="#f59e0b",
+            command=self._borc_duzenle,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
-            btn_bar, text="🗑 Sil", width=80, height=32,
-            fg_color="#c0392b", command=self._borc_sil
+            btn_bar,
+            text="🗑 Sil",
+            width=80,
+            height=32,
+            fg_color="#c0392b",
+            command=self._borc_sil,
         ).pack(side="left")
 
         # Özet
@@ -363,10 +419,14 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         self.b_ozet.pack(side="right")
 
         # Filtre
-        ctk.CTkLabel(btn_bar, text="Durum:", font=("Segoe UI", 12)).pack(side="right", padx=(0, 5))
+        ctk.CTkLabel(btn_bar, text="Durum:", font=("Segoe UI", 12)).pack(
+            side="right", padx=(0, 5)
+        )
         self.b_durum = ctk.CTkComboBox(
-            btn_bar, width=110, values=["Aktif", "Ödendi", "Tümü"],
-            command=lambda _: self._borclari_yenile()
+            btn_bar,
+            width=110,
+            values=["Aktif", "Ödendi", "Tümü"],
+            command=lambda _: self._borclari_yenile(),
         )
         self.b_durum.set("Aktif")
         self.b_durum.pack(side="right", padx=(0, 15))
@@ -377,7 +437,17 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         )
 
         # Tablo
-        self.b_kolonlar = ("ID", "Tür", "Açıklama", "Kişi/Kurum", "Toplam", "Kalan", "Başlangıç", "Vade", "Durum")
+        self.b_kolonlar = (
+            "ID",
+            "Tür",
+            "Açıklama",
+            "Kişi/Kurum",
+            "Toplam",
+            "Kalan",
+            "Başlangıç",
+            "Vade",
+            "Durum",
+        )
         self.b_tablo = ttk.Treeview(
             tab, columns=self.b_kolonlar, show="headings", height=10
         )
@@ -400,14 +470,21 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         toplam_borc = 0.0
         toplam_alacak = 0.0
         for b in borclar:
-            self.b_tablo.insert("", "end", values=(
-                b["id"], b["tur"], b["aciklama"], b["kisi"] or "",
-                f"{b['toplam_tutar']:,.2f} ₺",
-                f"{b['kalan_tutar']:,.2f} ₺",
-                b["baslangic_tarih"] or "",
-                b["vade_tarih"] or "",
-                b["durum"],
-            ))
+            self.b_tablo.insert(
+                "",
+                "end",
+                values=(
+                    b["id"],
+                    b["tur"],
+                    b["aciklama"],
+                    b["kisi"] or "",
+                    f"{b['toplam_tutar']:,.2f} ₺",
+                    f"{b['kalan_tutar']:,.2f} ₺",
+                    b["baslangic_tarih"] or "",
+                    b["vade_tarih"] or "",
+                    b["durum"],
+                ),
+            )
             if b["durum"] == "Aktif":
                 if b["tur"] == "Borç":
                     toplam_borc += b["kalan_tutar"]
@@ -416,7 +493,7 @@ class PlanlamaSayfasi(ctk.CTkFrame):
 
         self.b_ozet.configure(
             text=f"🔴 Borç: {toplam_borc:,.0f} ₺  |  🟢 Alacak: {toplam_alacak:,.0f} ₺  |  "
-                 f"📊 Net: {toplam_alacak - toplam_borc:,.0f} ₺"
+            f"📊 Net: {toplam_alacak - toplam_borc:,.0f} ₺"
         )
 
     def _borc_ekle_ac(self):
@@ -433,8 +510,9 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             messagebox.showwarning("Uyarı", "Düzenlemek için bir satır seçin.")
             return
         veri = self.b_tablo.item(secili[0])["values"]
-        BorcDuzenlePenceresi(self, "Borç/Alacak Düzenle", int(veri[0]), self.db,
-                             self._borclari_yenile)
+        BorcDuzenlePenceresi(
+            self, "Borç/Alacak Düzenle", int(veri[0]), self.db, self._borclari_yenile
+        )
 
     def _borc_sil(self):
         secili = self.b_tablo.selection()
@@ -451,8 +529,10 @@ class PlanlamaSayfasi(ctk.CTkFrame):
 # YARDIMCI PENCERELER
 # =========================================
 
+
 class Pencere(ctk.CTkToplevel):
     """Plan ekleme penceresi."""
+
     def __init__(self, parent, baslik, kaydet_cb, extra=None):
         super().__init__(parent)
         self.title(baslik)
@@ -484,9 +564,9 @@ class Pencere(ctk.CTkToplevel):
         self.tutar.pack(pady=8)
         tutar_bind(self.tutar)
 
-        ctk.CTkButton(
-            self, text="💾 Kaydet", width=200, command=self._kaydet
-        ).pack(pady=16)
+        ctk.CTkButton(self, text="💾 Kaydet", width=200, command=self._kaydet).pack(
+            pady=16
+        )
 
     def _kaydet(self):
         try:
@@ -506,6 +586,7 @@ class Pencere(ctk.CTkToplevel):
 
 class BorcPenceresi(ctk.CTkToplevel):
     """Borç/Alacak ekleme penceresi."""
+
     def __init__(self, parent, baslik, kaydet_cb):
         super().__init__(parent)
         self.title(baslik)
@@ -526,7 +607,9 @@ class BorcPenceresi(ctk.CTkToplevel):
         self.tur.set("Borç")
         self.tur.pack(pady=8)
 
-        self.aciklama = ctk.CTkEntry(self, width=300, placeholder_text="Açıklama (örn: Kredi Kartı)")
+        self.aciklama = ctk.CTkEntry(
+            self, width=300, placeholder_text="Açıklama (örn: Kredi Kartı)"
+        )
         self.aciklama.pack(pady=8)
 
         self.kisi = ctk.CTkEntry(self, width=300, placeholder_text="Kişi / Kurum")
@@ -540,17 +623,21 @@ class BorcPenceresi(ctk.CTkToplevel):
         self.kalan.pack(pady=8)
         tutar_bind(self.kalan)
 
-        self.baslangic = ctk.CTkEntry(self, width=300, placeholder_text="Başlangıç Tarihi (GG.AA.YYYY)")
+        self.baslangic = ctk.CTkEntry(
+            self, width=300, placeholder_text="Başlangıç Tarihi (GG.AA.YYYY)"
+        )
         self.baslangic.pack(pady=8)
         tarih_bind(self.baslangic)
 
-        self.vade = ctk.CTkEntry(self, width=300, placeholder_text="Vade Tarihi (GG.AA.YYYY)")
+        self.vade = ctk.CTkEntry(
+            self, width=300, placeholder_text="Vade Tarihi (GG.AA.YYYY)"
+        )
         self.vade.pack(pady=8)
         tarih_bind(self.vade)
 
-        ctk.CTkButton(
-            self, text="💾 Kaydet", width=200, command=self._kaydet
-        ).pack(pady=16)
+        ctk.CTkButton(self, text="💾 Kaydet", width=200, command=self._kaydet).pack(
+            pady=16
+        )
 
     def _kaydet(self):
         try:
@@ -573,6 +660,7 @@ class BorcPenceresi(ctk.CTkToplevel):
 
 class BorcDuzenlePenceresi(ctk.CTkToplevel):
     """Borç/Alacak düzenleme penceresi."""
+
     def __init__(self, parent, baslik, borc_id, db, yenile_cb):
         super().__init__(parent)
         self.title(baslik)
@@ -614,9 +702,9 @@ class BorcDuzenlePenceresi(ctk.CTkToplevel):
         self.durum.set(mevcut["durum"])
         self.durum.pack(pady=8)
 
-        ctk.CTkButton(
-            self, text="💾 Güncelle", width=200, command=self._guncelle
-        ).pack(pady=16)
+        ctk.CTkButton(self, text="💾 Güncelle", width=200, command=self._guncelle).pack(
+            pady=16
+        )
 
     def _guncelle(self):
         try:

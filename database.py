@@ -1,10 +1,10 @@
 import csv
+import hashlib
 import shutil
 import sqlite3
-from pathlib import Path
-import hashlib
 from datetime import datetime
-from typing import Any, Optional, List, Tuple, Dict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 # ==========================
 # Veritabanı Ayarları
@@ -59,8 +59,7 @@ class Database:
     # ==========================
 
     def create_tables(self) -> None:
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS islemler(
 
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,11 +75,9 @@ class Database:
             tutar REAL NOT NULL
 
         )
-        """
-        )
+        """)
 
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS butceler(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ay INTEGER NOT NULL,
@@ -89,20 +86,16 @@ class Database:
             tutar REAL NOT NULL,
             UNIQUE(ay, yil, kategori)
         )
-        """
-        )
+        """)
 
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS ayarlar(
             anahtar TEXT PRIMARY KEY,
             deger TEXT
         )
-        """
-        )
+        """)
 
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS planlanan(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ay INTEGER NOT NULL,
@@ -112,11 +105,9 @@ class Database:
             aciklama TEXT,
             tutar REAL NOT NULL
         )
-        """
-        )
+        """)
 
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS borclar(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tur TEXT NOT NULL,
@@ -128,11 +119,9 @@ class Database:
             vade_tarih TEXT,
             durum TEXT NOT NULL DEFAULT 'Aktif'
         )
-        """
-        )
+        """)
 
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS kullanicilar(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             kullanici_adi TEXT UNIQUE NOT NULL,
@@ -140,17 +129,19 @@ class Database:
             ad_soyad TEXT,
             olusturma_tarihi TEXT NOT NULL
         )
-        """
-        )
+        """)
 
         # İlk kullanıcı otomatik admin olur (ID=1)
 
         self.conn.commit()
+
     # ==========================
     # GELİR EKLE
     # ==========================
 
-    def gelir_ekle(self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float) -> None:
+    def gelir_ekle(
+        self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float
+    ) -> None:
         tarih_iso = normalize_date(tarih)
         self.cursor.execute(
             """
@@ -169,7 +160,9 @@ class Database:
     # GİDER EKLE
     # ==========================
 
-    def gider_ekle(self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float) -> None:
+    def gider_ekle(
+        self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float
+    ) -> None:
         tarih_iso = normalize_date(tarih)
         self.cursor.execute(
             """
@@ -189,15 +182,13 @@ class Database:
     # ==========================
 
     def tum_islemler(self) -> List[Tuple[Any, ...]]:
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         SELECT *
 
         FROM islemler
 
         ORDER BY id DESC
-        """
-        )
+        """)
 
         return self.cursor.fetchall()
 
@@ -206,16 +197,12 @@ class Database:
         row = self.cursor.fetchone()
         return row[0] if row else 0
 
-    def islem_ara(
-        self, arama: str = "", tur: str = ""
-    ) -> List[Tuple[Any, ...]]:
+    def islem_ara(self, arama: str = "", tur: str = "") -> List[Tuple[Any, ...]]:
         """Belirtilen metin ve türe göre işlemleri filtreleyerek arar."""
         sorgu = "SELECT * FROM islemler WHERE 1=1"
         params: List[Any] = []
         if arama:
-            sorgu += (
-                " AND (kategori LIKE ? OR aciklama LIKE ? OR CAST(tutar AS TEXT) LIKE ?)"
-            )
+            sorgu += " AND (kategori LIKE ? OR aciklama LIKE ? OR CAST(tutar AS TEXT) LIKE ?)"
             like = f"%{arama}%"
             params.extend([like, like, like])
         if tur:
@@ -304,8 +291,7 @@ class Database:
 
     def aylik_ozet(self) -> List[Tuple[str, float, float]]:
         """(ay, gelir_toplam, gider_toplam) listesi döner. Son 12 ay."""
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         SELECT
             strftime('%Y-%m', tarih) AS ay,
             SUM(CASE WHEN tur='Gelir' THEN tutar ELSE 0 END),
@@ -314,8 +300,7 @@ class Database:
         GROUP BY ay
         ORDER BY ay DESC
         LIMIT 12
-        """
-        )
+        """)
         return [(r[0], float(r[1]), float(r[2])) for r in self.cursor.fetchall()]
 
     def export_csv(self, path: str) -> None:
@@ -329,8 +314,9 @@ class Database:
                     tarih_goster = dt.strftime("%d.%m.%Y")
                 except ValueError:
                     tarih_goster = satir[1]
-                writer.writerow([satir[0], tarih_goster, satir[2],
-                                satir[3], satir[4], satir[5]])
+                writer.writerow(
+                    [satir[0], tarih_goster, satir[2], satir[3], satir[4], satir[5]]
+                )
 
     def import_csv(self, path: str) -> int:
         """CSV dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner."""
@@ -468,15 +454,13 @@ class Database:
     # ==========================
 
     def toplam_gelir(self) -> float:
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         SELECT IFNULL(SUM(tutar),0)
 
         FROM islemler
 
         WHERE tur='Gelir'
-        """
-        )
+        """)
 
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
@@ -487,15 +471,13 @@ class Database:
     # ==========================
 
     def toplam_gider(self) -> float:
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
         SELECT IFNULL(SUM(tutar),0)
 
         FROM islemler
 
         WHERE tur='Gider'
-        """
-        )
+        """)
 
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
@@ -541,21 +523,23 @@ class Database:
     # PLANLAMA İŞLEMLERİ
     # ==========================
 
-    def planlanan_ekle(self, ay: int, yil: int, kategori: str, tur: str,
-                       aciklama: str, tutar: float) -> int:
+    def planlanan_ekle(
+        self, ay: int, yil: int, kategori: str, tur: str, aciklama: str, tutar: float
+    ) -> int:
         self.cursor.execute(
             "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, tutar) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (ay, yil, kategori, tur, aciklama, tutar),
         )
         self.conn.commit()
+        assert self.cursor.lastrowid is not None
         return self.cursor.lastrowid
 
-    def planlanan_guncelle(self, id: int, kategori: str, tur: str,
-                           aciklama: str, tutar: float) -> None:
+    def planlanan_guncelle(
+        self, id: int, kategori: str, tur: str, aciklama: str, tutar: float
+    ) -> None:
         self.cursor.execute(
-            "UPDATE planlanan SET kategori=?, tur=?, aciklama=?, tutar=? "
-            "WHERE id=?",
+            "UPDATE planlanan SET kategori=?, tur=?, aciklama=?, tutar=? " "WHERE id=?",
             (kategori, tur, aciklama, tutar, id),
         )
         self.conn.commit()
@@ -586,8 +570,16 @@ class Database:
     # BORÇ / ALACAK İŞLEMLERİ
     # ==========================
 
-    def borc_ekle(self, tur: str, aciklama: str, kisi: str, toplam: float,
-                  kalan: float, baslangic: str, vade: str) -> int:
+    def borc_ekle(
+        self,
+        tur: str,
+        aciklama: str,
+        kisi: str,
+        toplam: float,
+        kalan: float,
+        baslangic: str,
+        vade: str,
+    ) -> int:
         self.cursor.execute(
             "INSERT INTO borclar (tur, aciklama, kisi, toplam_tutar, "
             "kalan_tutar, baslangic_tarih, vade_tarih, durum) "
@@ -595,6 +587,7 @@ class Database:
             (tur, aciklama, kisi, toplam, kalan, baslangic, vade),
         )
         self.conn.commit()
+        assert self.cursor.lastrowid is not None
         return self.cursor.lastrowid
 
     def borc_guncelle(self, id: int, kalan: float, durum: str) -> None:
@@ -610,16 +603,23 @@ class Database:
 
     def borclari_listele(self, durum: str = "Aktif") -> List[Dict[str, Any]]:
         if durum == "Tümü":
-            self.cursor.execute(
-                "SELECT * FROM borclar ORDER BY vade_tarih"
-            )
+            self.cursor.execute("SELECT * FROM borclar ORDER BY vade_tarih")
         else:
             self.cursor.execute(
                 "SELECT * FROM borclar WHERE durum=? ORDER BY vade_tarih",
                 (durum,),
             )
-        kolonlar = ["id", "tur", "aciklama", "kisi", "toplam_tutar",
-                    "kalan_tutar", "baslangic_tarih", "vade_tarih", "durum"]
+        kolonlar = [
+            "id",
+            "tur",
+            "aciklama",
+            "kisi",
+            "toplam_tutar",
+            "kalan_tutar",
+            "baslangic_tarih",
+            "vade_tarih",
+            "durum",
+        ]
         return [dict(zip(kolonlar, satir)) for satir in self.cursor.fetchall()]
 
     def borc_toplam(self, durum: str = "Aktif") -> float:
@@ -634,7 +634,9 @@ class Database:
     # KULLANICI İŞLEMLERİ
     # ==========================
 
-    def kullanici_dogrula(self, kullanici_adi: str, sifre: str) -> Optional[Dict[str, Any]]:
+    def kullanici_dogrula(
+        self, kullanici_adi: str, sifre: str
+    ) -> Optional[Dict[str, Any]]:
         """Kullanıcı girişi doğrular, başarılıysa kullanıcı bilgilerini döner."""
         sifre_hash = _sifre_hashla(sifre)
         self.cursor.execute(
@@ -650,13 +652,18 @@ class Database:
     def kullanici_kaydet(self, kullanici_adi: str, sifre: str, ad_soyad: str) -> bool:
         """Yeni kullanıcı kaydeder. Başarılıysa True."""
         from datetime import datetime as dt
+
         sifre_hash = _sifre_hashla(sifre)
         try:
             self.cursor.execute(
                 "INSERT INTO kullanicilar (kullanici_adi, sifre_hash, ad_soyad, "
                 "olusturma_tarihi) VALUES (?, ?, ?, ?)",
-                (kullanici_adi, sifre_hash, ad_soyad,
-                 dt.now().strftime("%Y-%m-%d %H:%M")),
+                (
+                    kullanici_adi,
+                    sifre_hash,
+                    ad_soyad,
+                    dt.now().strftime("%Y-%m-%d %H:%M"),
+                ),
             )
             self.conn.commit()
             return True
@@ -691,8 +698,12 @@ class Database:
             "SELECT id, kullanici_adi, ad_soyad, olusturma_tarihi FROM kullanicilar"
         )
         return [
-            {"id": r[0], "kullanici_adi": r[1], "ad_soyad": r[2],
-             "olusturma_tarihi": r[3]}
+            {
+                "id": r[0],
+                "kullanici_adi": r[1],
+                "ad_soyad": r[2],
+                "olusturma_tarihi": r[3],
+            }
             for r in self.cursor.fetchall()
         ]
 
@@ -715,7 +726,7 @@ class Database:
     def kategori_ekle(self, tur: str, kategori: str) -> None:
         """Belirtilen tür (Gelir/Gider) için özel kategori ekler."""
         anahtar = f"kategoriler_{tur.lower()}"
-        mevcut = self.ayar_oku(anahtar, "")
+        mevcut = self.ayar_oku(anahtar, "") or ""
         kategoriler = [k.strip() for k in mevcut.split(",") if k.strip()]
         if kategori not in kategoriler:
             kategoriler.append(kategori)
@@ -724,7 +735,7 @@ class Database:
     def kategorileri_getir(self, tur: str) -> List[str]:
         """Belirtilen tür için tüm kategorileri (varsayılan + özel) döner."""
         anahtar = f"kategoriler_{tur.lower()}"
-        mevcut = self.ayar_oku(anahtar, "")
+        mevcut = self.ayar_oku(anahtar, "") or ""
         ozel = [k.strip() for k in mevcut.split(",") if k.strip()]
         return ozel
 

@@ -19,8 +19,11 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(pady=(0, 10))
         ctk.CTkButton(
-            btn_frame, text="🔄 Grafikleri Yenile", width=200,
-            fg_color="#0d9488", command=self._grafik_ciz
+            btn_frame,
+            text="🔄 Grafikleri Yenile",
+            width=200,
+            fg_color="#0d9488",
+            command=self._grafik_ciz,
         ).pack()
 
         self._grafik_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -65,8 +68,12 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         if giderler:
             labels2 = [item[0] for item in giderler[:5]]
             values2 = [item[1] for item in giderler[:5]]
-            ax3.pie(values2, labels=labels2, autopct="%1.1f%%",
-                    colors=["#c0392b", "#e74c3c", "#e67e22", "#f39c12", "#d35400"])
+            ax3.pie(
+                values2,
+                labels=labels2,
+                autopct="%1.1f%%",
+                colors=["#c0392b", "#e74c3c", "#e67e22", "#f39c12", "#d35400"],
+            )
             ax3.set_title("Gider Kategori Dağılımı")
         else:
             ax3.text(0.5, 0.5, "Henüz gider verisi yok", ha="center", va="center")

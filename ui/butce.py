@@ -14,8 +14,7 @@ class ButceSayfasi(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            self, text="📅 Bütçe Yönetimi",
-            font=("Segoe UI", 28, "bold")
+            self, text="📅 Bütçe Yönetimi", font=("Segoe UI", 28, "bold")
         ).pack(pady=20)
 
         simdi = datetime.now()
@@ -28,16 +27,14 @@ class ButceSayfasi(ctk.CTkFrame):
         self.yil.pack(pady=6)
 
         self.kategori = ctk.CTkComboBox(
-            self, width=220,
+            self,
+            width=220,
             values=self._kategori_listesi(),
         )
         self.kategori.set("Market")
         self.kategori.pack(pady=6)
 
-        self.tutar = ctk.CTkEntry(
-            self, width=220,
-            placeholder_text="Bütçe Tutarı"
-        )
+        self.tutar = ctk.CTkEntry(self, width=220, placeholder_text="Bütçe Tutarı")
         self.tutar.pack(pady=6)
         tutar_bind(self.tutar)
 
@@ -51,9 +48,19 @@ class ButceSayfasi(ctk.CTkFrame):
 
     def _kategori_listesi(self) -> list:
         varsayilan = [
-            "Maaş", "Prim", "Ek İş", "Faiz", "Yatırım",
-            "Market", "Kira", "Fatura", "Yakıt", "Yemek",
-            "Sağlık", "Eğlence", "Diğer",
+            "Maaş",
+            "Prim",
+            "Ek İş",
+            "Faiz",
+            "Yatırım",
+            "Market",
+            "Kira",
+            "Fatura",
+            "Yakıt",
+            "Yemek",
+            "Sağlık",
+            "Eğlence",
+            "Diğer",
         ]
         ozel_gelir = self.db.kategorileri_getir("Gelir")
         ozel_gider = self.db.kategorileri_getir("Gider")
@@ -91,15 +98,15 @@ class ButceSayfasi(ctk.CTkFrame):
 
             asim_var = False
             for item in durumlar:
-                kategori = item['kategori']
+                kategori = item["kategori"]
                 butce_str = f"{item['butce']:,.2f} ₺"
                 harcanan_str = f"{item['harcanan']:,.2f} ₺"
                 kalan_str = f"{item['kalan']:,.2f} ₺"
                 durum_icon = "✅"
-                if item['kalan'] < 0:
+                if item["kalan"] < 0:
                     durum_icon = "🔴 AŞILDI!"
                     asim_var = True
-                elif item['kalan'] < item['butce'] * 0.1:
+                elif item["kalan"] < item["butce"] * 0.1:
                     durum_icon = "🟡 Yaklaşıyor"
                 line = (
                     f"{durum_icon} {kategori}: Bütçe {butce_str}"

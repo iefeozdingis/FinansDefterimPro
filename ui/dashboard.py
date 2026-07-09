@@ -1,8 +1,8 @@
 from tkinter import messagebox, ttk
 
 import customtkinter as ctk
-from database import normalize_date
 
+from database import normalize_date
 from ui.utils import tarih_bind, tutar_bind, tutar_oku
 
 
@@ -30,6 +30,7 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         # Tarihi ISO'dan GG.AA.YYYY'e çevir
         try:
             from datetime import datetime
+
             dt = datetime.strptime(islem[1], "%Y-%m-%d")
             self.tarih.insert(0, dt.strftime("%d.%m.%Y"))
         except ValueError:
@@ -42,8 +43,11 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         self.tur.pack(pady=8)
 
         self.kategori = ctk.CTkComboBox(
-            self, width=300, values=self._kategoriler(),
-            button_color="#475569", button_hover_color="#334155"
+            self,
+            width=300,
+            values=self._kategoriler(),
+            button_color="#475569",
+            button_hover_color="#334155",
         )
         self.kategori.set(islem[3])
         self.kategori.pack(pady=8)
@@ -56,7 +60,9 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         # Tutarı formatlı göster
         try:
             t = float(islem[5])
-            self.tutar.insert(0, f"{t:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+            self.tutar.insert(
+                0, f"{t:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            )
         except (ValueError, TypeError):
             self.tutar.insert(0, str(islem[5]))
         self.tutar.pack(pady=8)
@@ -69,6 +75,7 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
     def _kategoriler(self):
         from ui.gelir import VARSAYILAN_GELIR_KATEGORILER
         from ui.gider import VARSAYILAN_GIDER_KATEGORILER
+
         return VARSAYILAN_GELIR_KATEGORILER + VARSAYILAN_GIDER_KATEGORILER
 
     def kaydet(self):
@@ -110,31 +117,32 @@ class Dashboard(ctk.CTkFrame):
 
     # Kart renkleri
     KART_RENKLER = {
-        "💰": ("#1a472a", "#2e8b57"),   # Gelir - yeşil
-        "💸": ("#6b1c1c", "#c0392b"),   # Gider - kırmızı
-        "🏦": ("#134e4a", "#14b8a6"),   # Bakiye - teal
-        "📄": ("#4a3a0a", "#d4a017"),   # İşlem - altın
+        "💰": ("#1a472a", "#2e8b57"),  # Gelir - yeşil
+        "💸": ("#6b1c1c", "#c0392b"),  # Gider - kırmızı
+        "🏦": ("#134e4a", "#14b8a6"),  # Bakiye - teal
+        "📄": ("#4a3a0a", "#d4a017"),  # İşlem - altın
     }
 
     def kart(self, row, col, icon, baslik, deger):
         koyu, acik = self.KART_RENKLER.get(icon, ("#2d2d2d", "#555555"))
 
         frame = ctk.CTkFrame(
-            self, height=150, corner_radius=16,
-            fg_color=koyu, border_width=1, border_color=acik
+            self,
+            height=150,
+            corner_radius=16,
+            fg_color=koyu,
+            border_width=1,
+            border_color=acik,
         )
         frame.grid(row=row, column=col, padx=12, pady=10, sticky="nsew")
         frame.grid_propagate(False)
 
         # İkon
-        ctk.CTkLabel(
-            frame, text=icon, font=("Segoe UI Emoji", 36)
-        ).pack(pady=(18, 2))
+        ctk.CTkLabel(frame, text=icon, font=("Segoe UI Emoji", 36)).pack(pady=(18, 2))
 
         # Başlık
         ctk.CTkLabel(
-            frame, text=baslik,
-            font=("Segoe UI", 13), text_color="#94a3b8"
+            frame, text=baslik, font=("Segoe UI", 13), text_color="#94a3b8"
         ).pack()
 
         # Değer - para formatı
@@ -143,8 +151,7 @@ class Dashboard(ctk.CTkFrame):
         else:
             deger_text = str(deger)
         ctk.CTkLabel(
-            frame, text=deger_text,
-            font=("Segoe UI", 24, "bold"), text_color="#ffffff"
+            frame, text=deger_text, font=("Segoe UI", 24, "bold"), text_color="#ffffff"
         ).pack(pady=(2, 18))
 
         # Hover efekti + tıklama
@@ -156,9 +163,9 @@ class Dashboard(ctk.CTkFrame):
 
         def on_click(e, icon=icon):
             top = self.winfo_toplevel()
-            if icon == "💰" and hasattr(top, 'gelir_ac'):
+            if icon == "💰" and hasattr(top, "gelir_ac"):
                 top.gelir_ac()
-            elif icon == "💸" and hasattr(top, 'gider_ac'):
+            elif icon == "💸" and hasattr(top, "gider_ac"):
                 top.gider_ac()
 
         frame.bind("<Enter>", on_enter)
@@ -185,15 +192,20 @@ class Dashboard(ctk.CTkFrame):
 
         self.grid_columnconfigure((0, 1), weight=1)
 
-        ctk.CTkLabel(self, text="📊  Dashboard", font=("Segoe UI", 30, "bold"), text_color="#5eead4").grid(
-            row=0, column=0, sticky="w", padx=20, pady=(20, 5)
-        )
+        ctk.CTkLabel(
+            self,
+            text="📊  Dashboard",
+            font=("Segoe UI", 30, "bold"),
+            text_color="#5eead4",
+        ).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
 
         # Aktif kullanıcı
         kullanici_adi = self.db.ayar_oku("aktif_kullanici_adi", "")
         ctk.CTkLabel(
-            self, text=f"👤 {kullanici_adi}",
-            font=("Segoe UI", 12), text_color="#2dd4bf"
+            self,
+            text=f"👤 {kullanici_adi}",
+            font=("Segoe UI", 12),
+            text_color="#2dd4bf",
         ).grid(row=0, column=1, sticky="e", padx=20, pady=(20, 5))
 
         gelir = self.db.toplam_gelir()
@@ -207,38 +219,52 @@ class Dashboard(ctk.CTkFrame):
 
         # Bu ay bütçe uyarısı
         from datetime import datetime
+
         simdi = datetime.now()
         butce_durum = self.db.butce_durumu(simdi.month, simdi.year)
-        asan_kategoriler = [b for b in butce_durum if b['kalan'] < 0]
-        yaklasan = [b for b in butce_durum
-                    if 0 <= b['kalan'] < b['butce'] * 0.2 and b['kalan'] >= 0]
+        asan_kategoriler = [b for b in butce_durum if b["kalan"] < 0]
+        yaklasan = [
+            b
+            for b in butce_durum
+            if 0 <= b["kalan"] < b["butce"] * 0.2 and b["kalan"] >= 0
+        ]
         if asan_kategoriler:
             uyari_frame = ctk.CTkFrame(self, fg_color="#8B0000")
-            uyari_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0))
+            uyari_frame.grid(
+                row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
+            )
             uyari_text = "⚠️ Bütçe Aşımı: " + ", ".join(
                 f"{b['kategori']} ({b['kalan']:,.0f} ₺)" for b in asan_kategoriler
             )
             ctk.CTkLabel(
-                uyari_frame, text=uyari_text,
-                font=("Segoe UI", 13, "bold"), text_color="white"
+                uyari_frame,
+                text=uyari_text,
+                font=("Segoe UI", 13, "bold"),
+                text_color="white",
             ).pack(pady=8)
 
         # Erken uyarı (bütçeye yaklaşanlar)
         if yaklasan and not asan_kategoriler:
             uyari_frame = ctk.CTkFrame(self, fg_color="#7c5e00")
-            uyari_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0))
+            uyari_frame.grid(
+                row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
+            )
             uyari_text = "🟡 Bütçeye Yaklaşıyor: " + ", ".join(
                 f"{b['kategori']} (%{int((1-b['kalan']/b['butce'])*100)})"
                 for b in yaklasan
             )
             ctk.CTkLabel(
-                uyari_frame, text=uyari_text,
-                font=("Segoe UI", 13, "bold"), text_color="white"
+                uyari_frame,
+                text=uyari_text,
+                font=("Segoe UI", 13, "bold"),
+                text_color="white",
             ).pack(pady=8)
 
         # ARAMA / FİLTRE
         arama_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
-        arama_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 5))
+        arama_frame.grid(
+            row=4, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 5)
+        )
         arama_frame.grid_columnconfigure(0, weight=1)
 
         self.arama_entry = ctk.CTkEntry(
@@ -248,14 +274,20 @@ class Dashboard(ctk.CTkFrame):
         self.arama_entry.bind("<Return>", lambda e: self.yenile())
 
         self.ara_btn = ctk.CTkButton(
-            arama_frame, text="🔍 Ara", width=70, height=32,
-            fg_color="#0d9488", command=self.yenile
+            arama_frame,
+            text="🔍 Ara",
+            width=70,
+            height=32,
+            fg_color="#0d9488",
+            command=self.yenile,
         )
         self.ara_btn.grid(row=0, column=2, padx=(5, 10), pady=8)
 
         self.tur_filtre = ctk.CTkComboBox(
-            arama_frame, width=120, values=["Tümü", "Gelir", "Gider"],
-            command=lambda _: self.yenile()
+            arama_frame,
+            width=120,
+            values=["Tümü", "Gelir", "Gider"],
+            command=lambda _: self.yenile(),
         )
         self.tur_filtre.set(tur_secili)
         self.tur_filtre.grid(row=0, column=1, padx=(5, 10), pady=8)
@@ -366,7 +398,9 @@ class Dashboard(ctk.CTkFrame):
     def toplu_sil(self):
         secili = self.tablo.selection()
         if not secili:
-            messagebox.showwarning("Uyarı", "Ctrl+tıklama ile birden fazla satır seçin.")
+            messagebox.showwarning(
+                "Uyarı", "Ctrl+tıklama ile birden fazla satır seçin."
+            )
             return
         if not messagebox.askyesno("Toplu Sil", f"{len(secili)} işlem silinsin mi?"):
             return

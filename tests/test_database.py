@@ -97,12 +97,10 @@ class DatabaseTests(unittest.TestCase):
 
     def test_borclar(self):
         borc_id = self.db.borc_ekle(
-            "Borç", "Kredi Kartı", "Banka A", 10000, 7500,
-            "01.06.2026", "01.12.2026"
+            "Borç", "Kredi Kartı", "Banka A", 10000, 7500, "01.06.2026", "01.12.2026"
         )
         self.db.borc_ekle(
-            "Alacak", "Maaş", "Şirket", 20000, 20000,
-            "01.07.2026", "01.07.2026"
+            "Alacak", "Maaş", "Şirket", 20000, 20000, "01.07.2026", "01.07.2026"
         )
 
         aktif = self.db.borclari_listele("Aktif")

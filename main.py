@@ -1,9 +1,9 @@
-import customtkinter as ctk
 import logging
 import threading
-from datetime import datetime, date
+from datetime import date, datetime
 from pathlib import Path
 
+import customtkinter as ctk
 from PIL import Image as PILImage
 
 from database import Database
@@ -12,8 +12,8 @@ from ui.butce import ButceSayfasi
 from ui.dashboard import Dashboard
 from ui.gelir import GelirSayfasi
 from ui.gider import GiderSayfasi
-from ui.grafikler import GrafiklerSayfasi
 from ui.giris import GirisEkrani
+from ui.grafikler import GrafiklerSayfasi
 from ui.hakkinda import HakkindaSayfasi
 from ui.planlama import PlanlamaSayfasi
 from ui.raporlar import RaporlarSayfasi
@@ -29,11 +29,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ctk.set_default_color_theme(str(Path(__file__).parent / "assets" / "fineding_theme.json"))
+ctk.set_default_color_theme(
+    str(Path(__file__).parent / "assets" / "fineding_theme.json")
+)
 
 # Bildirim sistemi
 try:
     from plyer import notification
+
     HAS_NOTIFICATIONS = True
 except ImportError:
     HAS_NOTIFICATIONS = False
@@ -41,6 +44,7 @@ except ImportError:
 # Sistem tepsisi
 try:
     import pystray
+
     HAS_TRAY = True
 except ImportError:
     HAS_TRAY = False
@@ -62,8 +66,9 @@ def _bildirim_gonder(baslik, mesaj):
 
 def _borc_kontrol_thread(db_path: str):
     """Arka planda borç vadesi yaklaşanları kontrol eder."""
-    import time
     import sqlite3
+    import time
+
     while True:
         try:
             conn = sqlite3.connect(db_path)
@@ -90,13 +95,13 @@ def _borc_kontrol_thread(db_path: str):
                         _bildirim_gonder(
                             "⏰ Ödeme Yaklaşıyor!",
                             f"{aciklama}\nKalan: {kalan:,.0f} ₺\n"
-                            f"Vade: {vade_str} ({kalan_gun} gün)"
+                            f"Vade: {vade_str} ({kalan_gun} gün)",
                         )
                     elif kalan_gun < 0:
                         _bildirim_gonder(
                             "🔴 Vade Geçti!",
                             f"{aciklama}\nKalan: {kalan:,.0f} ₺\n"
-                            f"Vade: {vade_str} (geçti)"
+                            f"Vade: {vade_str} (geçti)",
                         )
                 except Exception:
                     pass
@@ -164,10 +169,7 @@ class FinedingApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # Sol menü - logoya uygun teal arka plan
-        self.menu = ctk.CTkFrame(
-            self, width=240, corner_radius=0,
-            fg_color="#0f766e"
-        )
+        self.menu = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color="#0f766e")
         self.menu.grid(row=0, column=0, sticky="ns")
         self.menu.grid_propagate(False)
 
@@ -194,24 +196,25 @@ class FinedingApp(ctk.CTk):
             self.logo_img = ctk.CTkImage(
                 light_image=PILImage.open(icon_path),
                 dark_image=PILImage.open(icon_path),
-                size=(60, 60)
+                size=(60, 60),
             )
             ctk.CTkLabel(logo_frame, image=self.logo_img, text="").pack()
 
         ctk.CTkLabel(
-            logo_frame, text="FINEding",
-            font=("Segoe UI", 20, "bold"), text_color="#ccfbf1"
+            logo_frame,
+            text="FINEding",
+            font=("Segoe UI", 20, "bold"),
+            text_color="#ccfbf1",
         ).pack(pady=(4, 0))
 
         ctk.CTkLabel(
-            logo_frame, text="Finans Takip",
-            font=("Segoe UI", 11), text_color="#94a3b8"
+            logo_frame, text="Finans Takip", font=("Segoe UI", 11), text_color="#94a3b8"
         ).pack()
 
         # Ayraç
-        ctk.CTkFrame(
-            self.menu, height=1, fg_color="#334155"
-        ).pack(fill="x", padx=20, pady=(0, 15))
+        ctk.CTkFrame(self.menu, height=1, fg_color="#334155").pack(
+            fill="x", padx=20, pady=(0, 15)
+        )
 
         # Menü butonları
         menu_ogeleri = [
@@ -230,17 +233,15 @@ class FinedingApp(ctk.CTk):
             self.menu_butonlari.append(btn)
 
         # Alt ayraç
-        ctk.CTkFrame(
-            self.menu, height=1, fg_color="#334155"
-        ).pack(fill="x", padx=20, pady=(15, 15), side="bottom")
+        ctk.CTkFrame(self.menu, height=1, fg_color="#334155").pack(
+            fill="x", padx=20, pady=(15, 15), side="bottom"
+        )
 
         # Ayarlar butonu (altta)
         self.btn_ayarlar = self._menu_butonu_olustur(
             "⚙️", "Ayarlar", "Ctrl+,", self.ayarlar_ac, alt=True
         )
-        self._menu_butonu_olustur(
-            "ℹ️", "Hakkında", "", self.hakkinda_ac, alt=True
-        )
+        self._menu_butonu_olustur("ℹ️", "Hakkında", "", self.hakkinda_ac, alt=True)
 
         # Klavye kısayolları
         self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
@@ -310,7 +311,7 @@ class FinedingApp(ctk.CTk):
     def _guvenli_gecis(self, sayfa_sinifi, **kwargs):
         """Sayfa değiştir - öncekini yok et, yenisini oluştur."""
         # Önceki zamanlanmış geçişi iptal et
-        if hasattr(self, '_gecis_after_id'):
+        if hasattr(self, "_gecis_after_id"):
             self.after_cancel(self._gecis_after_id)
 
         try:
@@ -409,6 +410,7 @@ class FinedingApp(ctk.CTk):
         self.withdraw()
         if HAS_TRAY:
             from plyer import notification
+
             try:
                 notification.notify(
                     title="Fineding",
@@ -443,6 +445,7 @@ def baslat():
 
     # Arka plan borç kontrolü başlat
     import database as db_module
+
     kontrol = threading.Thread(
         target=_borc_kontrol_thread,
         args=(str(db_module.DB_PATH),),
@@ -461,7 +464,7 @@ def baslat():
         _bildirim_gonder(
             "Fineding'e Hoş Geldiniz! 👋",
             f"Merhaba {kullanici['ad_soyad']}, finansal takibiniz başladı.\n"
-            "Ödemeler yaklaştığında sizi uyaracağız."
+            "Ödemeler yaklaştığında sizi uyaracağız.",
         )
         app.mainloop()
 

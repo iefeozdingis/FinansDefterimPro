@@ -21,19 +21,27 @@ class GelirSayfasi(ctk.CTkFrame):
 
         # Ana kart
         kart = ctk.CTkFrame(
-            self, corner_radius=20, fg_color="#0d2818", border_width=1, border_color="#2e8b57"
+            self,
+            corner_radius=20,
+            fg_color="#0d2818",
+            border_width=1,
+            border_color="#2e8b57",
         )
         kart.pack(pady=30, padx=40, fill="both", expand=True)
 
         # Başlık
         ctk.CTkLabel(
-            kart, text="💰  Gelir Ekle",
-            font=("Segoe UI", 30, "bold"), text_color="#4ade80"
+            kart,
+            text="💰  Gelir Ekle",
+            font=("Segoe UI", 30, "bold"),
+            text_color="#4ade80",
         ).pack(pady=(30, 10))
 
         ctk.CTkLabel(
-            kart, text="Yeni bir gelir kaydı oluştur",
-            font=("Segoe UI", 13), text_color="#94a3b8"
+            kart,
+            text="Yeni bir gelir kaydı oluştur",
+            font=("Segoe UI", 13),
+            text_color="#94a3b8",
         ).pack(pady=(0, 25))
 
         # Form alanları
@@ -41,51 +49,73 @@ class GelirSayfasi(ctk.CTkFrame):
         form.pack(pady=10)
 
         self.tarih = ctk.CTkEntry(
-            form, width=380, height=42, placeholder_text="Tarih (GG.AA.YYYY)",
-            font=("Segoe UI", 14), corner_radius=10,
-            border_color="#2e8b57"
+            form,
+            width=380,
+            height=42,
+            placeholder_text="Tarih (GG.AA.YYYY)",
+            font=("Segoe UI", 14),
+            corner_radius=10,
+            border_color="#2e8b57",
         )
         self.tarih.insert(0, datetime.now().strftime("%d.%m.%Y"))
         self.tarih.pack(pady=8)
         tarih_bind(self.tarih)
 
         self.kategori = ctk.CTkComboBox(
-            form, width=380, height=42,
+            form,
+            width=380,
+            height=42,
             values=self._kategori_listesi(),
-            font=("Segoe UI", 14), corner_radius=10,
+            font=("Segoe UI", 14),
+            corner_radius=10,
             border_color="#2e8b57",
-            button_color="#2e8b57", button_hover_color="#1a4730"
+            button_color="#2e8b57",
+            button_hover_color="#1a4730",
         )
         self.kategori.set("Maaş")
         self.kategori.pack(pady=8)
 
         self.aciklama = ctk.CTkEntry(
-            form, width=380, height=42, placeholder_text="Açıklama",
-            font=("Segoe UI", 14), corner_radius=10,
-            border_color="#2e8b57"
+            form,
+            width=380,
+            height=42,
+            placeholder_text="Açıklama",
+            font=("Segoe UI", 14),
+            corner_radius=10,
+            border_color="#2e8b57",
         )
         self.aciklama.pack(pady=8)
 
         self.tutar = ctk.CTkEntry(
-            form, width=380, height=42, placeholder_text="Tutar (₺)",
-            font=("Segoe UI", 14), corner_radius=10,
-            border_color="#2e8b57"
+            form,
+            width=380,
+            height=42,
+            placeholder_text="Tutar (₺)",
+            font=("Segoe UI", 14),
+            corner_radius=10,
+            border_color="#2e8b57",
         )
         self.tutar.pack(pady=8)
         tutar_bind(self.tutar)
 
         self.kaydet_btn = ctk.CTkButton(
-            kart, text="💾  Geliri Kaydet",
-            width=280, height=45,
+            kart,
+            text="💾  Geliri Kaydet",
+            width=280,
+            height=45,
             font=("Segoe UI", 15, "bold"),
-            fg_color="#2e8b57", hover_color="#1a4730",
-            corner_radius=12, command=self.kaydet
+            fg_color="#2e8b57",
+            hover_color="#1a4730",
+            corner_radius=12,
+            command=self.kaydet,
         )
         self.kaydet_btn.pack(pady=(25, 30))
 
     def _kategori_listesi(self) -> list:
         ozel = self.db.kategorileri_getir("Gelir")
-        return VARSAYILAN_GELIR_KATEGORILER + [k for k in ozel if k not in VARSAYILAN_GELIR_KATEGORILER]
+        return VARSAYILAN_GELIR_KATEGORILER + [
+            k for k in ozel if k not in VARSAYILAN_GELIR_KATEGORILER
+        ]
 
     def kaydet(self):
         try:
@@ -103,10 +133,7 @@ class GelirSayfasi(ctk.CTkFrame):
             self.db.kategori_ekle("Gelir", kategori)
             self.kategori.configure(values=self._kategori_listesi())
 
-            self.db.gelir_ekle(
-                self.tarih.get(), kategori,
-                self.aciklama.get(), tutar
-            )
+            self.db.gelir_ekle(self.tarih.get(), kategori, self.aciklama.get(), tutar)
 
             messagebox.showinfo("Başarılı", "Gelir başarıyla kaydedildi.")
 

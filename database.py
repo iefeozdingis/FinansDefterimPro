@@ -15,13 +15,27 @@ DB_FOLDER.mkdir(exist_ok=True)
 
 DB_PATH = DB_FOLDER / "finans.db"
 
-# Sabit salt (gerçek projede her kullanıcı için ayrı olmalı)
-_SALT = b"Fineding2024!"
+# Güvenli şifre hash'leme
+
+try:
+    import bcrypt
+    _HAS_BCRYPT = True
+except ImportError:
+    _HAS_BCRYPT = False
 
 
 def _sifre_hashla(sifre: str) -> str:
-    """SHA-256 + salt ile şifre hash'ler."""
-    return hashlib.sha256(_SALT + sifre.encode()).hexdigest()
+    """bcrypt ile şifre hash'ler, yoksa SHA-256'ya düşer."""
+    if _HAS_BCRYPT:
+        return bcrypt.hashpw(sifre.encode(), bcrypt.gensalt()).decode()
+    return hashlib.sha256(b"Fineding2024!" + sifre.encode()).hexdigest()
+
+
+def _sifre_dogrula(sifre: str, hash_deger: str) -> bool:
+    """Şifre ile hash'i karşılaştırır (bcrypt veya SHA-256)."""
+    if _HAS_BCRYPT and hash_deger.startswith("$2"):
+        return bcrypt.checkpw(sifre.encode(), hash_deger.encode())
+    return _sifre_hashla(sifre) == hash_deger
 
 
 def normalize_date(tarih_str: str) -> str:
@@ -149,8 +163,31 @@ class Database:
         )
         """)
 
+        # İşlem geçmişi (audit log)
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS islem_log(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            zaman TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            islem_turu TEXT NOT NULL,
+            islem_id INTEGER,
+            detay TEXT
+        )
+        """)
+
         # İlk kullanıcı otomatik admin olur (ID=1)
 
+        self.conn.commit()
+
+    # ==========================
+    # İŞLEM LOG KAYDI
+    # ==========================
+
+    def _log_islem(self, islem_turu: str, islem_id: Any = None, detay: str = "") -> None:
+        """Veritabanı işlemlerini log'a kaydeder."""
+        self.cursor.execute(
+            "INSERT INTO islem_log (islem_turu, islem_id, detay) VALUES (?,?,?)",
+            (islem_turu, islem_id, detay),
+        )
         self.conn.commit()
 
     # ==========================
@@ -174,6 +211,7 @@ class Database:
         )
 
         self.conn.commit()
+        self._log_islem("gelir_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
 
     # ==========================
     # GİDER EKLE
@@ -196,6 +234,7 @@ class Database:
         )
 
         self.conn.commit()
+        self._log_islem("gider_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
 
     # ==========================
     # TÜM İŞLEMLER
@@ -251,6 +290,7 @@ class Database:
             (tarih_iso, tur, kategori, aciklama, tutar, id),
         )
         self.conn.commit()
+        self._log_islem("guncelle", id, f"{kategori}: {tutar}")
 
     def islemler_aralik(self, baslangic: str, bitis: str) -> List[Tuple[Any, ...]]:
         bas_iso = normalize_date(baslangic)
@@ -520,6 +560,7 @@ class Database:
         self._son_silinen = self.cursor.fetchone()
         self.cursor.execute("DELETE FROM islemler WHERE id=?", (id,))
         self.conn.commit()
+        self._log_islem("sil", id, "İşlem silindi")
 
     def geri_al(self) -> bool:
         """Son silinen işlemi geri getirir. Başarılıysa True döner."""
@@ -660,14 +701,13 @@ class Database:
         self, kullanici_adi: str, sifre: str
     ) -> Optional[Dict[str, Any]]:
         """Kullanıcı girişi doğrular, başarılıysa kullanıcı bilgilerini döner."""
-        sifre_hash = _sifre_hashla(sifre)
         self.cursor.execute(
-            "SELECT id, kullanici_adi, ad_soyad FROM kullanicilar "
-            "WHERE kullanici_adi=? AND sifre_hash=?",
-            (kullanici_adi, sifre_hash),
+            "SELECT id, kullanici_adi, ad_soyad, sifre_hash FROM kullanicilar "
+            "WHERE kullanici_adi=?",
+            (kullanici_adi,),
         )
         row = self.cursor.fetchone()
-        if row:
+        if row and _sifre_dogrula(sifre, row[3]):
             return {"id": row[0], "kullanici_adi": row[1], "ad_soyad": row[2]}
         return None
 

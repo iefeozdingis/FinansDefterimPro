@@ -840,11 +840,11 @@ class Database:
 
         return {
             "bu_ay": {"ay": bu_ay, "yil": bu_yil,
-                       "gelir": _ay_toplam(bu_ay, bu_yil, "Gelir"),
-                       "gider": _ay_toplam(bu_ay, bu_yil, "Gider")},
+                      "gelir": _ay_toplam(bu_ay, bu_yil, "Gelir"),
+                      "gider": _ay_toplam(bu_ay, bu_yil, "Gider")},
             "gecen_ay": {"ay": gecen_ay, "yil": gecen_yil,
-                          "gelir": _ay_toplam(gecen_ay, gecen_yil, "Gelir"),
-                          "gider": _ay_toplam(gecen_ay, gecen_yil, "Gider")},
+                         "gelir": _ay_toplam(gecen_ay, gecen_yil, "Gelir"),
+                         "gider": _ay_toplam(gecen_ay, gecen_yil, "Gider")},
         }
 
     # ==========================

@@ -640,7 +640,7 @@ class Dashboard(ctk.CTkFrame):
     def _hizli_islem(self, tur):
         """Hızlı işlem ekleme penceresi açar."""
         from datetime import datetime
-        from ui.utils import tarih_bind, tutar_bind, tutar_oku
+        from ui.utils import tutar_bind, tutar_oku
 
         pencere = ctk.CTkToplevel(self)
         pencere.title(f"Hızlı {tur} Ekle")

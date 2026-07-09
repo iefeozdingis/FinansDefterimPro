@@ -17,7 +17,6 @@ from ui.giris import GirisEkrani
 from ui.grafikler import GrafiklerSayfasi
 from ui.hakkinda import HakkindaSayfasi
 from ui.planlama import PlanlamaSayfasi
-from ui.raporlar import RaporlarSayfasi
 
 # Loglama
 log_dir = Path(__file__).parent / "logs"
@@ -336,7 +335,6 @@ class FinedingApp(ctk.CTk):
         )
         self.widget_btn.pack(fill="x")
         self._widget_acik = False
-        self._widget_thread = None
 
         # Klavye kısayolları
         self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
@@ -382,25 +380,8 @@ class FinedingApp(ctk.CTk):
         return btn
 
     # =====================================
-    # SAYFA GEÇİŞ ANİMASYONU
+    # SAYFA GEÇİŞİ
     # =====================================
-
-    def _sayfa_degistir(self, sayfa_sinifi, **kwargs):
-        self.temizle()
-        sayfa = sayfa_sinifi(self.content, self.db, **kwargs)
-        sayfa.grid(row=0, column=0, sticky="nsew")
-        # Basit fade-in efekti
-        sayfa.configure(fg_color=self.content.cget("fg_color"))
-        for _ in range(3):
-            self.update_idletasks()
-
-    # =====================================
-    # SAYFA TEMİZLE
-    # =====================================
-
-    def temizle(self):
-        for widget in list(self.content.winfo_children()):
-            widget.destroy()
 
     def _guvenli_gecis(self, sayfa_sinifi, **kwargs):
         """Sayfa değiştir - öncekini yok et, yenisini oluştur."""

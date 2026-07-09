@@ -85,6 +85,10 @@ FINEding, tüm gelir-gider takibini **tek bir şık arayüzde**, **ücretsiz** v
 # Projeyi indir, KURULUM.bat'a çift tıkla — her şeyi otomatik yapar!
 ```
 
+### ⚡ Tek Dosya İndir (En Kolay)
+**[📥 FINEding.exe İndir](https://github.com/iefeozdingis/FINEding/releases/latest)**  
+Python kurmaya gerek yok! Tek `.exe` dosyası, çift tıkla çalışır (~216 MB).
+
 ### Manuel Kurulum
 ```bash
 git clone https://github.com/iefeozdingis/FINEding.git

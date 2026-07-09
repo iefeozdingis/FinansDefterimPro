@@ -242,6 +242,23 @@ class FinedingApp(ctk.CTk):
         )
         self._menu_butonu_olustur("ℹ️", "Hakkında", "", self.hakkinda_ac, alt=True)
 
+        # Tema değiştirme butonu
+        tema_frame = ctk.CTkFrame(self.menu, fg_color="transparent")
+        tema_frame.pack(fill="x", padx=10, pady=3, side="bottom")
+        self.tema_btn = ctk.CTkButton(
+            tema_frame,
+            text="  🌙  Karanlık Tema",
+            font=("Segoe UI", 12),
+            height=36,
+            anchor="w",
+            fg_color="transparent",
+            hover_color="#0d9488",
+            text_color="#cbd5e1",
+            corner_radius=10,
+            command=self._tema_degistir,
+        )
+        self.tema_btn.pack(fill="x")
+
         # Klavye kısayolları
         self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
         self.bind_all("<Control-n>", lambda e: self.gelir_ac())
@@ -420,10 +437,36 @@ class FinedingApp(ctk.CTk):
 
     def _gercek_cikis(self):
         """Tamamen kapat."""
+        # Otomatik yedekle
+        try:
+            from datetime import datetime
+            yedek_adi = f"backups/oto_yedek_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+            self.db.yedekle(yedek_adi)
+            # Sadece son 10 yedeği tut
+            import glob
+            yedekler = sorted(glob.glob("backups/oto_yedek_*.db"), reverse=True)
+            for eski in yedekler[10:]:
+                try:
+                    Path(eski).unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         self.db.close()
         if self.tray_icon:
             self.tray_icon.stop()
         self.destroy()
+
+    def _tema_degistir(self):
+        """Aydınlık/Karanlık tema değiştir."""
+        mevcut = ctk.get_appearance_mode()
+        if mevcut == "Dark":
+            ctk.set_appearance_mode("Light")
+            self.tema_btn.configure(text="  ☀️  Aydınlık Tema")
+        else:
+            ctk.set_appearance_mode("Dark")
+            self.tema_btn.configure(text="  🌙  Karanlık Tema")
 
     def hesap_degistir(self):
         """Oturumu kapatıp giriş ekranına dön."""

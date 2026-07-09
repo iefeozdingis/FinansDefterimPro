@@ -375,6 +375,27 @@ class Dashboard(ctk.CTkFrame):
         self.btn_toplu_sil.pack(side="left", padx=8)
 
         # ==========================
+        # Hızlı İşlem Butonları
+        # ==========================
+        self.btn_hizli_gelir = ctk.CTkButton(
+            buton_frame,
+            text="💰 + Gelir",
+            fg_color="#2e8b57",
+            hover_color="#1a4730",
+            command=self._hizli_gelir,
+        )
+        self.btn_hizli_gelir.pack(side="left", padx=8)
+
+        self.btn_hizli_gider = ctk.CTkButton(
+            buton_frame,
+            text="💸 + Gider",
+            fg_color="#c0392b",
+            hover_color="#8b1a1a",
+            command=self._hizli_gider,
+        )
+        self.btn_hizli_gider.pack(side="left", padx=8)
+
+        # ==========================
         # Dışa Aktar Butonları (Rapor birleştirildi)
         # ==========================
         export_frame = ctk.CTkFrame(tablo_frame, fg_color="transparent")
@@ -566,3 +587,65 @@ class Dashboard(ctk.CTkFrame):
             self.db.sil(veri[0])
         self.yenile()
         messagebox.showinfo("Başarılı", f"{len(secili)} işlem silindi.")
+
+    def _hizli_islem(self, tur):
+        """Hızlı işlem ekleme penceresi açar."""
+        from datetime import datetime
+        from ui.utils import tarih_bind, tutar_bind, tutar_oku
+
+        pencere = ctk.CTkToplevel(self)
+        pencere.title(f"Hızlı {tur} Ekle")
+        pencere.geometry("380x280")
+        pencere.resizable(False, False)
+        pencere.transient(self.winfo_toplevel())
+        pencere.grab_set()
+        pencere.lift()
+        pencere.focus_force()
+
+        ctk.CTkLabel(
+            pencere,
+            text=f"{'💰' if tur == 'Gelir' else '💸'} Hızlı {tur} Ekle",
+            font=("Segoe UI", 18, "bold"),
+        ).pack(pady=15)
+
+        tutar_entry = ctk.CTkEntry(pencere, width=280, placeholder_text="Tutar (₺)", font=("Segoe UI", 16))
+        tutar_entry.pack(pady=8)
+        tutar_bind(tutar_entry)
+        tutar_entry.focus()
+
+        aciklama_entry = ctk.CTkEntry(pencere, width=280, placeholder_text="Açıklama (opsiyonel)", font=("Segoe UI", 13))
+        aciklama_entry.pack(pady=8)
+
+        def kaydet():
+            try:
+                t = tutar_oku(tutar_entry)
+                if t <= 0:
+                    messagebox.showwarning("Uyarı", "Tutar 0'dan büyük olmalı.")
+                    return
+                aciklama = aciklama_entry.get().strip() or None
+                bugun = datetime.now().strftime("%d.%m.%Y")
+                if tur == "Gelir":
+                    self.db.gelir_ekle(bugun, "Diğer", aciklama, t)
+                else:
+                    self.db.gider_ekle(bugun, "Diğer", aciklama, t)
+                messagebox.showinfo("Başarılı", f"{tur} eklendi: {t:,.2f} ₺")
+                pencere.destroy()
+                self.yenile()
+            except Exception as e:
+                messagebox.showerror("Hata", str(e))
+
+        ctk.CTkButton(
+            pencere,
+            text=f"💾 {tur} Ekle",
+            width=200,
+            fg_color="#2e8b57" if tur == "Gelir" else "#c0392b",
+            command=kaydet,
+        ).pack(pady=15)
+
+        pencere.bind("<Return>", lambda e: kaydet())
+
+    def _hizli_gelir(self):
+        self._hizli_islem("Gelir")
+
+    def _hizli_gider(self):
+        self._hizli_islem("Gider")

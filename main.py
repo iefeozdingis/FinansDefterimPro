@@ -547,7 +547,12 @@ class FinedingApp(ctk.CTk):
         """Bakiye widget'ını aç/kapat."""
         if self._widget_acik:
             self._widget_acik = False
-            self.widget_btn.configure(text="  💰  Bakiye Widget", fg_color="transparent")
+            self.widget_btn.configure(
+                text="  💰  Bakiye Widget",
+                fg_color="transparent",
+                border_width=0,
+                text_color="#cbd5e1",
+            )
             # Widget'ı kapat
             if hasattr(self, "_bakiye_widget") and self._bakiye_widget:
                 try:
@@ -557,7 +562,16 @@ class FinedingApp(ctk.CTk):
                 self._bakiye_widget = None
         else:
             self._widget_acik = True
-            self.widget_btn.configure(text="  💰  Widget Açık", fg_color="#0d9488")
+            # Not: hover_color da "#0d9488" olduğu için "açık" durumunu ondan
+            # ayrı bir renk + kenarlık ile göstermek gerekiyor, yoksa açık
+            # hâli sıradan hover efektiyle aynı görünüyor ve fark edilmiyor.
+            self.widget_btn.configure(
+                text="  ✅  Widget Açık",
+                fg_color="#0f766e",
+                border_width=2,
+                border_color="#2dd4bf",
+                text_color="#ffffff",
+            )
             self._bakiye_widget = BakiyeWidget(self.db, ana_pencere_callback=self._ana_pencereyi_goster)
 
     def hesap_degistir(self):

@@ -117,6 +117,7 @@ class GirisEkrani(ctk.CTk):
             show="•",
         )
         self.sifre.pack(pady=6)
+        self.kullanici_adi.bind("<Return>", lambda e: self.sifre.focus())
         self.sifre.bind("<Return>", lambda e: self._giris_yap())
 
         # Beni hatırla
@@ -159,7 +160,7 @@ class GirisEkrani(ctk.CTk):
 
         # Alt bilgi
         ctk.CTkLabel(
-            self, text="v1.0 — Fineding", font=("Segoe UI", 10), text_color="#475569"
+            self, text="v1.5 — Fineding", font=("Segoe UI", 10), text_color="#475569"
         ).pack(pady=(15, 0))
 
     def _giris_yap(self):

@@ -2,7 +2,6 @@
 
 import threading
 import time
-from pathlib import Path
 
 import customtkinter as ctk
 
@@ -40,7 +39,6 @@ class BakiyeWidget(ctk.CTk):
         self._label.pack(expand=True, fill="both", padx=8, pady=4)
 
         self.guncelle()
-        import threading
         self._durdur = False
         t = threading.Thread(target=self._periyodik_guncelle, daemon=True)
         t.start()

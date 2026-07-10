@@ -231,10 +231,10 @@ class Dashboard(ctk.CTkFrame):
         gider = self.db.toplam_gider()
         bakiye = self.db.bakiye()
 
-        self.kart(1, 0, "💰", "Toplam Gelir", gelir)
-        self.kart(1, 1, "💸", "Toplam Gider", gider)
-        self.kart(2, 0, "🏦", "Bakiye", bakiye)
-        self.kart(2, 1, "📄", "İşlem Sayısı", self.db.tum_islem_sayisi())
+        self.kart(2, 0, "💰", "Toplam Gelir", gelir)
+        self.kart(2, 1, "💸", "Toplam Gider", gider)
+        self.kart(3, 0, "🏦", "Bakiye", bakiye)
+        self.kart(3, 1, "📄", "İşlem Sayısı", self.db.tum_islem_sayisi())
 
         # Bu ay bütçe uyarısı
         from datetime import datetime
@@ -250,7 +250,7 @@ class Dashboard(ctk.CTkFrame):
         if asan_kategoriler:
             uyari_frame = ctk.CTkFrame(self, fg_color="#8B0000")
             uyari_frame.grid(
-                row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
+                row=4, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
             )
             uyari_text = "⚠️ Bütçe Aşımı: " + ", ".join(
                 f"{b['kategori']} ({b['kalan']:,.0f} ₺)" for b in asan_kategoriler
@@ -266,7 +266,7 @@ class Dashboard(ctk.CTkFrame):
         if yaklasan and not asan_kategoriler:
             uyari_frame = ctk.CTkFrame(self, fg_color="#7c5e00")
             uyari_frame.grid(
-                row=3, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
+                row=4, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
             )
             uyari_text = "🟡 Bütçeye Yaklaşıyor: " + ", ".join(
                 f"{b['kategori']} (%{int((1-b['kalan']/b['butce'])*100)})"
@@ -281,7 +281,7 @@ class Dashboard(ctk.CTkFrame):
 
         # Bütçe ilerleme çubukları
         if butce_durum:
-            progres_row = 4 if asan_kategoriler or yaklasan else 3
+            progres_row = 5 if asan_kategoriler or yaklasan else 4
             progres_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
             progres_frame.grid(
                 row=progres_row, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
@@ -309,7 +309,7 @@ class Dashboard(ctk.CTkFrame):
         # ARAMA / FİLTRE
         arama_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
         arama_frame.grid(
-            row=4, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 5)
+            row=6, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 5)
         )
         arama_frame.grid_columnconfigure(0, weight=1)
 
@@ -365,7 +365,7 @@ class Dashboard(ctk.CTkFrame):
 
         # TABLO
         tablo_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
-        tablo_frame.grid(row=5, column=0, columnspan=2, sticky="nsew", padx=20, pady=20)
+        tablo_frame.grid(row=7, column=0, columnspan=2, sticky="nsew", padx=20, pady=20)
 
         ctk.CTkLabel(
             tablo_frame, text="Son İşlemler", font=("Segoe UI", 20, "bold")
@@ -505,7 +505,13 @@ class Dashboard(ctk.CTkFrame):
                 writer = csv.writer(f)
                 writer.writerow(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar"])
                 for satir in self.db.islem_ara():
-                    writer.writerow(satir)
+                    try:
+                        from datetime import datetime
+                        dt = datetime.strptime(str(satir[1]), "%Y-%m-%d")
+                        tarih_goster = dt.strftime("%d.%m.%Y")
+                    except Exception:
+                        tarih_goster = satir[1]
+                    writer.writerow([satir[0], tarih_goster, satir[2], satir[3], satir[4], satir[5]])
             messagebox.showinfo("Başarılı", f"CSV dışa aktarıldı:\n{yol}")
         except Exception as e:
             messagebox.showerror("Hata", str(e))
@@ -680,6 +686,8 @@ class Dashboard(ctk.CTkFrame):
                 messagebox.showinfo("Başarılı", f"{tur} eklendi: {t:,.2f} ₺")
                 pencere.destroy()
                 self.yenile()
+            except ValueError:
+                messagebox.showerror("Hata", "Geçerli bir tutar giriniz.")
             except Exception as e:
                 messagebox.showerror("Hata", str(e))
 

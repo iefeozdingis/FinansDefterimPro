@@ -18,11 +18,11 @@ class ButceSayfasi(ctk.CTkFrame):
         ).pack(pady=20)
 
         simdi = datetime.now()
-        self.ay = ctk.CTkEntry(self, width=220, placeholder_text="Ay")
+        self.ay = ctk.CTkEntry(self, width=220, placeholder_text="Ay (1-12)")
         self.ay.insert(0, str(simdi.month))
         self.ay.pack(pady=6)
 
-        self.yil = ctk.CTkEntry(self, width=220, placeholder_text="Yıl")
+        self.yil = ctk.CTkEntry(self, width=220, placeholder_text="Yıl (örn: 2026)")
         self.yil.insert(0, str(simdi.year))
         self.yil.pack(pady=6)
 
@@ -69,16 +69,19 @@ class ButceSayfasi(ctk.CTkFrame):
 
     def kaydet(self):
         try:
+            ay = int(self.ay.get() or 0)
+            yil = int(self.yil.get() or 0)
+            if ay < 1 or ay > 12:
+                messagebox.showerror("Hata", "Ay 1-12 arasında olmalıdır.")
+                return
+            if yil < 2000 or yil > 2100:
+                messagebox.showerror("Hata", "Geçerli bir yıl giriniz (2000-2100).")
+                return
             tutar = tutar_oku(self.tutar)
             if tutar <= 0:
                 messagebox.showerror("Hata", "Bütçe tutarı sıfırdan büyük olmalıdır.")
                 return
-            self.db.kaydet_butce(
-                int(self.ay.get()),
-                int(self.yil.get()),
-                self.kategori.get(),
-                tutar,
-            )
+            self.db.kaydet_butce(ay, yil, self.kategori.get(), tutar)
             messagebox.showinfo("Başarılı", "Bütçe kaydedildi.")
             self.goster()
             if self.dashboard_callback:

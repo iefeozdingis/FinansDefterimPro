@@ -323,6 +323,10 @@ class SifreDegistirPenceresi(ctk.CTkToplevel):
         yeni = self.yeni_sifre.get()
         yeni2 = self.yeni_tekrar.get()
 
+        if not eski or not yeni:
+            messagebox.showerror("Hata", "Tüm alanları doldurun.")
+            return
+
         kullanici_adi = self.db.ayar_oku("aktif_kullanici_adi", "")
         if not self.db.kullanici_dogrula(kullanici_adi, eski):
             messagebox.showerror("Hata", "Mevcut şifre hatalı!")

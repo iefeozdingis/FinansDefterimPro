@@ -125,7 +125,6 @@ class Dashboard(ctk.CTkFrame):
         super().__init__(parent)
 
         self.db = db
-
         self.grid_columnconfigure((0, 1), weight=1)
 
         self.yenile()

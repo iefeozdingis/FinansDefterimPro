@@ -118,10 +118,6 @@ class BakiyeWidget(ctk.CTk):
 
     def kapat(self):
         self._durdur = True
-        try:
-            self.db.close()
-        except Exception:
-            pass
         self.destroy()
 
     @staticmethod

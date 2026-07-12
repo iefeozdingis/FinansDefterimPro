@@ -231,7 +231,8 @@ class FinedingApp(ctk.CTk):
                 pass
 
         self.db = Database()
-        ctk.set_appearance_mode("dark")
+        kayitli_tema = self.db.ayar_oku("tema", "Dark")
+        ctk.set_appearance_mode(kayitli_tema)
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -313,9 +314,14 @@ class FinedingApp(ctk.CTk):
         # Tema değiştirme butonu
         tema_frame = ctk.CTkFrame(self.menu, fg_color="transparent")
         tema_frame.pack(fill="x", padx=10, pady=3, side="bottom")
+        tema_metni = (
+            "  ☀️  Aydınlık Tema"
+            if ctk.get_appearance_mode() == "Light"
+            else "  🌙  Karanlık Tema"
+        )
         self.tema_btn = ctk.CTkButton(
             tema_frame,
-            text="  🌙  Karanlık Tema",
+            text=tema_metni,
             font=("Segoe UI", 12),
             height=36,
             anchor="w",
@@ -542,9 +548,11 @@ class FinedingApp(ctk.CTk):
         if mevcut == "Dark":
             ctk.set_appearance_mode("Light")
             self.tema_btn.configure(text="  ☀️  Aydınlık Tema")
+            self.db.ayar_kaydet("tema", "Light")
         else:
             ctk.set_appearance_mode("Dark")
             self.tema_btn.configure(text="  🌙  Karanlık Tema")
+            self.db.ayar_kaydet("tema", "Dark")
 
     def _global_arama_ac(self):
         """Ctrl+F: tüm işlem ve borçlarda anında arama penceresi."""

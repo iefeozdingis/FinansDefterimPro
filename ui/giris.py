@@ -160,7 +160,7 @@ class GirisEkrani(ctk.CTk):
 
         # Alt bilgi
         ctk.CTkLabel(
-            self, text="v1.5 — Fineding", font=("Segoe UI", 10), text_color="#475569"
+            self, text="v1.6.0 — Fineding", font=("Segoe UI", 10), text_color="#475569"
         ).pack(pady=(15, 0))
 
     def _giris_yap(self):

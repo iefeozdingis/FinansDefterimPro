@@ -27,7 +27,7 @@ class HakkindaSayfasi(ctk.CTkFrame):
         ).pack()
 
         ctk.CTkLabel(
-            kart, text="v1.5.0", font=("Segoe UI", 13), text_color="#64748b"
+            kart, text="v1.6.0", font=("Segoe UI", 13), text_color="#64748b"
         ).pack(pady=(0, 15))
 
         # Ayraç

@@ -133,6 +133,25 @@ class DatabaseTests(unittest.TestCase):
         # İkinci geri al başarısız
         self.assertFalse(self.db.geri_al())
 
+    def test_yedekle_wal_checkpoint(self):
+        """Yedekleme, WAL modunda henüz checkpoint edilmemiş veriyi kaçırmamalı."""
+        import sqlite3
+
+        self.db.gelir_ekle("01.07.2026", "Maaş", "WAL testi", 12345)
+
+        yedek_yol = Path(self.temp_dir.name) / "yedek.db"
+        self.db.yedekle(str(yedek_yol))
+
+        # Yedeği bağımsız bir bağlantıyla aç — orijinal bağlantı hâlâ
+        # açıkken bile checkpoint edilmiş veri görünmeli.
+        yedek_conn = sqlite3.connect(str(yedek_yol))
+        try:
+            cur = yedek_conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM islemler WHERE aciklama='WAL testi'")
+            self.assertEqual(cur.fetchone()[0], 1)
+        finally:
+            yedek_conn.close()
+
     def test_search(self):
         self.db.gelir_ekle("01.07.2026", "Maaş", "Ocak maaşı", 10000)
         self.db.gider_ekle("05.07.2026", "Market", "Haftalık alışveriş", 500)

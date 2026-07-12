@@ -5,7 +5,7 @@
 **Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-17%2F17%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-18%2F18%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
@@ -150,9 +150,10 @@ python -m unittest discover -s tests -v
 ✅ test_transaction_update_budget_and_settings
 ✅ test_undo
 ✅ test_user_authentication
+✅ test_yedekle_wal_checkpoint
 ✅ test_yillik_karsilastirma
 ─────────────────────────
-17 tests — ALL OK
+18 tests — ALL OK
 ```
 
 ---
@@ -201,11 +202,12 @@ FINEding/
 
 ---
 
-## 🩹 Son Düzeltmeler (2026-07-10)
+## 🩹 Son Düzeltmeler (2026-07-12)
 
-- **Planlama → Tekrarlayan sekmesi açılmıyordu:** `_tekrarlayan_olustur` ve ilgili metodlar yanlışlıkla `BorcDuzenlePenceresi` sınıfının altına yazılmıştı; doğru sınıfa (`PlanlamaSayfasi`) taşındı.
-- **Bütçe sayfası tema hatası:** `assets/fineding_theme.json` içindeki `CTkTextbox` bölümünde `border_color` anahtarı eksikti, eklendi.
-- Tüm sayfalar (`ButceSayfasi`, `PlanlamaSayfasi`, `HakkindaSayfasi`) artık hatasız açılıyor; 12/12 test yeşil.
+- **⚠️ Manuel yedekleme veri kaybediyordu:** `Yedek Oluştur` butonu, WAL modundaki veritabanını checkpoint yapmadan kopyalıyordu — uygulama kapatılmadan alınan yedekler tabloları bile içermeyebiliyordu. Artık kopyalamadan önce checkpoint zorlanıyor.
+- **Admin şifre sıfırlama diyalogunda yeni şifre açık metin görünüyordu:** maskelendi.
+- Planlama → Tekrarlayan sekmesi açılmıyordu, Bütçe sayfası tema hatası veriyordu, Bakiye widget'ı hiç görünmüyordu — hepsi çözüldü.
+- Tüm sayfalar hatasız açılıyor; 18/18 test yeşil.
 
 ## 📝 Geliştirici Notları
 

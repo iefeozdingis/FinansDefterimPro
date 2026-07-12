@@ -184,7 +184,8 @@ class AyarlarSayfasi(ctk.CTkFrame):
         from tkinter import simpledialog
 
         yeni = simpledialog.askstring(
-            "Şifre Sıfırla", "Yeni şifreyi girin (en az 3 karakter):", parent=self
+            "Şifre Sıfırla", "Yeni şifreyi girin (en az 3 karakter):",
+            parent=self, show="•",
         )
         if yeni and len(yeni) >= 3:
             self.db.kullanici_sifre_degistir(kullanici_id, yeni)

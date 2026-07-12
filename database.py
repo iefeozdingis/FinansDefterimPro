@@ -549,6 +549,14 @@ class Database:
         self.conn.commit()
 
     def yedekle(self, hedef_yol: str) -> None:
+        # WAL modunda veriler önce -wal dosyasına yazılır; checkpoint
+        # yapılmadan ana .db dosyası kopyalanırsa yedek eksik/boş çıkar.
+        # Ayrı/geçici bir cursor kullanılır: self.cursor üzerinden checkpoint
+        # çağırmak Windows'ta ana .db dosyasını sonradan kilitli bırakıyor.
+        self.conn.commit()
+        gecici_cursor = self.conn.cursor()
+        gecici_cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        gecici_cursor.close()
         shutil.copy2(DB_PATH, hedef_yol)
         # create checksum file next to backup
         h = hashlib.sha256()

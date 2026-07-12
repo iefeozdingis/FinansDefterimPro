@@ -133,6 +133,15 @@ class DatabaseTests(unittest.TestCase):
         # İkinci geri al başarısız
         self.assertFalse(self.db.geri_al())
 
+    def test_undo_etiket_korur(self):
+        """Geri al, silinen işlemin etiketlerini kaybetmemeli."""
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Etiketli işlem", 5000, "önemli, iş")
+        kayit = self.db.islem_ara("Etiketli")[0]
+        self.db.sil(kayit[0])
+        self.assertTrue(self.db.geri_al())
+        geri_gelen = self.db.islem_ara("Etiketli")[0]
+        self.assertEqual(geri_gelen[6], "önemli, iş")
+
     def test_yedekle_wal_checkpoint(self):
         """Yedekleme, WAL modunda henüz checkpoint edilmemiş veriyi kaçırmamalı."""
         import sqlite3
@@ -225,6 +234,15 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(hash_deger.startswith("$2b$") or len(hash_deger) == 64)
         self.assertTrue(_sifre_dogrula(sifre, hash_deger))
         self.assertFalse(_sifre_dogrula("yanlis", hash_deger))
+
+    def test_legacy_sha256_sifre_dogrulama(self):
+        """bcrypt mevcutken bile eski (bcrypt öncesi) SHA-256 hash'ler doğrulanabilmeli."""
+        import hashlib
+        from database import _sifre_dogrula
+        sifre = "eskisifre123"
+        eski_hash = hashlib.sha256(b"Fineding2024!" + sifre.encode()).hexdigest()
+        self.assertTrue(_sifre_dogrula(sifre, eski_hash))
+        self.assertFalse(_sifre_dogrula("yanlissifre", eski_hash))
 
     def test_islem_log(self):
         """CRUD işlemlerinin log'a kaydedildiğini test et."""

@@ -32,10 +32,15 @@ def _sifre_hashla(sifre: str) -> str:
 
 
 def _sifre_dogrula(sifre: str, hash_deger: str) -> bool:
-    """Şifre ile hash'i karşılaştırır (bcrypt veya SHA-256)."""
-    if _HAS_BCRYPT and hash_deger.startswith("$2"):
-        return bcrypt.checkpw(sifre.encode(), hash_deger.encode())
-    return _sifre_hashla(sifre) == hash_deger
+    """Şifre ile hash'i karşılaştırır (bcrypt veya eski SHA-256 hash'ler için)."""
+    if hash_deger.startswith("$2"):
+        if _HAS_BCRYPT:
+            return bcrypt.checkpw(sifre.encode(), hash_deger.encode())
+        return False
+    # Eski (bcrypt öncesi) SHA-256 hash — _sifre_hashla burada kullanılamaz,
+    # bcrypt mevcutken her zaman yeni bir bcrypt hash üretir ve asla eşleşmez.
+    legacy_hash = hashlib.sha256(b"Fineding2024!" + sifre.encode()).hexdigest()
+    return legacy_hash == hash_deger
 
 
 def normalize_date(tarih_str: str) -> str:
@@ -656,13 +661,21 @@ class Database:
             return False
         try:
             self.cursor.execute("BEGIN")
-            # Sadece ilk 6 sütunu kullan (etiketler hariç, eski DB'lerde yok)
-            veri = self._son_silinen[:6]
-            self.cursor.execute(
-                "INSERT INTO islemler (id, tarih, tur, kategori, aciklama, tutar) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                veri,
-            )
+            veri = self._son_silinen
+            if len(veri) >= 7:
+                self.cursor.execute(
+                    "INSERT INTO islemler "
+                    "(id, tarih, tur, kategori, aciklama, tutar, etiketler) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    veri[:7],
+                )
+            else:
+                # Eski DB'lerde etiketler sütunu olmayabilir
+                self.cursor.execute(
+                    "INSERT INTO islemler (id, tarih, tur, kategori, aciklama, tutar) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    veri[:6],
+                )
             self.conn.commit()
             self._son_silinen = None
             return True

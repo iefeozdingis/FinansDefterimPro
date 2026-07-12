@@ -174,7 +174,7 @@ FINEding/
 │   ├── butce.py          # Bütçe yönetimi
 │   ├── planlama.py       # Planlama + borç/alacak + tekrarlayan işlemler
 │   ├── grafikler.py      # Grafikler ve aylık karşılaştırma
-│   ├── raporlar.py       # Rapor/dışa aktarım (yedek)
+│   ├── global_arama.py   # Ctrl+F ile tüm uygulamada arama
 │   ├── ayarlar.py        # Ayarlar + admin paneli
 │   ├── giris.py          # Giriş/kayıt ekranı
 │   ├── hakkinda.py       # Hakkında sayfası
@@ -300,7 +300,7 @@ FINEding/
     ├── grafikler.py     # Grafikler sayfası
     ├── butce.py         # Bütçe yönetimi
     ├── planlama.py      # Planlama & borç takibi
-    ├── raporlar.py      # Rapor dışa aktarım
+    ├── global_arama.py  # Ctrl+F ile tüm uygulamada arama
     ├── ayarlar.py       # Ayarlar & admin paneli
     ├── hakkinda.py      # Hakkında sayfası
     └── utils.py         # Yardımcı fonksiyonlar

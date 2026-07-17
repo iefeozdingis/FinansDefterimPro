@@ -46,7 +46,25 @@ class GrafiklerSayfasi(ctk.CTkFrame):
 
         self._grafik_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._grafik_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        # Açık matplotlib canvas/figure'larını takip et; yeniden çizimden önce
+        # açıkça temizlenmezlerse Agg buffer'ları GC'ye kalıp RSS büyütüyordu.
+        self._canvaslar = []
         self._grafik_ciz()
+
+    def _grafikleri_temizle(self):
+        """Önceki figure/canvas'ları serbest bırakır (bellek sızıntısını önler)."""
+        for canvas in getattr(self, "_canvaslar", []):
+            try:
+                canvas.get_tk_widget().destroy()
+            except Exception:
+                pass
+            try:
+                canvas.figure.clf()
+            except Exception:
+                pass
+        self._canvaslar = []
+        for widget in self._grafik_frame.winfo_children():
+            widget.destroy()
 
     def _grafik_stil_uygula(self, fig, *eksenler, pasta_metinler=()):
         """Figure/axes'i mevcut aydınlık/karanlık temaya göre boyar.
@@ -75,8 +93,7 @@ class GrafiklerSayfasi(ctk.CTkFrame):
                 text.set_color(renk["metin"])
 
     def _grafik_ciz(self):
-        for widget in self._grafik_frame.winfo_children():
-            widget.destroy()
+        self._grafikleri_temizle()
 
         fig = Figure(figsize=(8, 6), dpi=100)
         ax1 = fig.add_subplot(211)
@@ -137,11 +154,13 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         canvas2 = FigureCanvasTkAgg(fig2, master=self._grafik_frame)
         canvas2.draw()
         canvas2.get_tk_widget().pack(fill="both", expand=True, pady=(10, 0))
+        self._canvaslar.append(canvas2)
 
         fig.tight_layout()
         canvas = FigureCanvasTkAgg(fig, master=self._grafik_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
+        self._canvaslar.append(canvas)
 
     def _aylik_veri(self):
         """SQL tabanlı aylık özet — tüm veriyi RAM'e çekmez."""
@@ -153,8 +172,7 @@ class GrafiklerSayfasi(ctk.CTkFrame):
 
     def _aylik_karsilastirma_ciz(self):
         """Bu ay vs geçen ay karşılaştırma grafiği."""
-        for widget in self._grafik_frame.winfo_children():
-            widget.destroy()
+        self._grafikleri_temizle()
 
         kars = self.db.aylik_karsilastirma()
         bu = kars["bu_ay"]
@@ -190,11 +208,11 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         canvas = FigureCanvasTkAgg(fig, master=self._grafik_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
+        self._canvaslar.append(canvas)
 
     def _yillik_karsilastirma_ciz(self):
         """Yıl bazında gelir/gider karşılaştırma grafiği."""
-        for widget in self._grafik_frame.winfo_children():
-            widget.destroy()
+        self._grafikleri_temizle()
 
         veri = self.db.yillik_karsilastirma()
         if not veri:
@@ -229,3 +247,4 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         canvas = FigureCanvasTkAgg(fig, master=self._grafik_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
+        self._canvaslar.append(canvas)

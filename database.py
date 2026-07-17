@@ -13,7 +13,10 @@ from typing import Any, Dict, List, Optional, Tuple
 # Veritabanı Ayarları
 # ==========================
 
-DB_FOLDER = Path("database")
+# Yol uygulama köküne (__file__) sabit — çalışma dizinine (CWD) göreli
+# olması, kısayoldan/PyInstaller'dan farklı dizinde başlatınca boş yeni bir
+# veritabanı oluşturup kullanıcıya "verim silindi" izlenimi veriyordu.
+DB_FOLDER = Path(__file__).resolve().parent / "database"
 DB_FOLDER.mkdir(exist_ok=True)
 
 DB_PATH = DB_FOLDER / "finans.db"

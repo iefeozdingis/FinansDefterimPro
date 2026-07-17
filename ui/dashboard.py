@@ -3,6 +3,7 @@ from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from database import csv_guvenli, normalize_date
+from ui import tema
 from ui.utils import (
     para_formatla,
     tarih_bind,
@@ -220,6 +221,9 @@ class Dashboard(ctk.CTkFrame):
             widget.destroy()
 
         self.grid_columnconfigure((0, 1), weight=1)
+        # Tablo satırı pencereyle birlikte büyüsün (önceden hiç row weight
+        # yoktu, tablo altında boşluk kalıyordu)
+        self.grid_rowconfigure(7, weight=1)
 
         ctk.CTkLabel(
             self,
@@ -293,7 +297,7 @@ class Dashboard(ctk.CTkFrame):
         # Bütçe ilerleme çubukları
         if butce_durum:
             progres_row = 5 if asan_kategoriler or yaklasan else 4
-            progres_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
+            progres_frame = ctk.CTkFrame(self, corner_radius=12, fg_color=tema.KART)
             progres_frame.grid(
                 row=progres_row, column=0, columnspan=2, sticky="ew", padx=20, pady=(5, 0)
             )
@@ -318,7 +322,7 @@ class Dashboard(ctk.CTkFrame):
                 ctk.CTkLabel(bar_frame, text=f"{para_formatla(b['harcanan'], sembol=False, ondalik=0)}/{para_formatla(b['butce'], ondalik=0)}", font=("Segoe UI", 10), width=120, text_color="#94a3b8").pack(side="left")
 
         # ARAMA / FİLTRE
-        arama_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
+        arama_frame = ctk.CTkFrame(self, corner_radius=12, fg_color=tema.KART)
         arama_frame.grid(
             row=6, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 5)
         )
@@ -375,7 +379,7 @@ class Dashboard(ctk.CTkFrame):
             self.arama_entry.insert(0, arama_metni)
 
         # TABLO
-        tablo_frame = ctk.CTkFrame(self, corner_radius=12, fg_color="#134e4a")
+        tablo_frame = ctk.CTkFrame(self, corner_radius=12, fg_color=tema.KART)
         tablo_frame.grid(row=7, column=0, columnspan=2, sticky="nsew", padx=20, pady=20)
 
         ctk.CTkLabel(
@@ -395,10 +399,18 @@ class Dashboard(ctk.CTkFrame):
 
         self.tablo.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Filtre uygula
+        # Filtre uygula — en yeni 200 kayıtla sınırla (binlerce işlemde her
+        # arama/filtrede tüm tabloyu çekip Treeview'a basmak donmaya yol açıyordu)
         tur = "" if tur_secili == "Tümü" else tur_secili
-        for satir in self.db.islem_ara(arama_metni, tur):
+        satirlar = self.db.islem_ara(arama_metni, tur, limit=200)
+        for satir in satirlar:
             self.tablo.insert("", "end", values=satir)
+        if len(satirlar) >= 200:
+            ctk.CTkLabel(
+                tablo_frame,
+                text="⏳ En yeni 200 kayıt gösteriliyor — daralt için arama/filtre kullan",
+                font=("Segoe UI", 10), text_color="#94a3b8",
+            ).pack(pady=(0, 4))
 
         buton_frame = ctk.CTkFrame(tablo_frame)
         buton_frame.pack(pady=10)
@@ -520,8 +532,47 @@ class Dashboard(ctk.CTkFrame):
     # Dışa Aktar Metotları
     # ==========================
 
+    def _arka_planda(self, is_fonksiyonu, basari_mesaji, *butonlar):
+        """Uzun süren bir işi (export/import) ayrı thread'de çalıştırır;
+        arayüz donmaz, işlem sırasında butonlar kilitlenir ve sonuç ana
+        thread'de gösterilir. is_fonksiyonu bir sonuç metni döner (ya da None)."""
+        import threading
+
+        for b in butonlar:
+            try:
+                b.configure(state="disabled")
+            except Exception:
+                pass
+
+        def calis():
+            hata = None
+            sonuc = None
+            try:
+                sonuc = is_fonksiyonu()
+            except Exception as e:  # noqa: BLE001
+                hata = e
+
+            def bitir():
+                for b in butonlar:
+                    try:
+                        b.configure(state="normal")
+                    except Exception:
+                        pass
+                if hata is not None:
+                    messagebox.showerror("Hata", str(hata))
+                elif sonuc is not None:
+                    messagebox.showinfo("Başarılı", sonuc)
+                else:
+                    messagebox.showinfo("Başarılı", basari_mesaji)
+            try:
+                self.after(0, bitir)
+            except Exception:
+                pass
+
+        threading.Thread(target=calis, daemon=True).start()
+
     def _csv_aktar(self):
-        from tkinter import filedialog, messagebox
+        from tkinter import filedialog
         import csv
 
         yol = filedialog.asksaveasfilename(
@@ -529,13 +580,16 @@ class Dashboard(ctk.CTkFrame):
         )
         if not yol:
             return
-        try:
+
+        def is_():
+            from datetime import datetime
             with open(yol, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.writer(f)
-                writer.writerow(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"])
+                writer.writerow(
+                    ["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]
+                )
                 for satir in self.db.islem_ara():
                     try:
-                        from datetime import datetime
                         dt = datetime.strptime(str(satir[1]), "%Y-%m-%d")
                         tarih_goster = dt.strftime("%d.%m.%Y")
                     except Exception:
@@ -546,17 +600,19 @@ class Dashboard(ctk.CTkFrame):
                         csv_guvenli(satir[3]), csv_guvenli(satir[4]),
                         satir[5], csv_guvenli(etiket),
                     ])
-            messagebox.showinfo("Başarılı", f"CSV dışa aktarıldı:\n{yol}")
-        except Exception as e:
-            messagebox.showerror("Hata", str(e))
+            return f"CSV dışa aktarıldı:\n{yol}"
+
+        self._arka_planda(is_, "CSV dışa aktarıldı.")
 
     def _excel_aktar(self):
-        from tkinter import filedialog, messagebox
+        from tkinter import filedialog
 
         try:
             from openpyxl import Workbook
         except ImportError:
-            messagebox.showerror("Hata", "openpyxl kütüphanesi gerekli.")
+            messagebox.showerror(
+                "Hata", "Excel dışa aktarımı bu kurulumda kullanılamıyor."
+            )
             return
 
         yol = filedialog.asksaveasfilename(
@@ -564,21 +620,24 @@ class Dashboard(ctk.CTkFrame):
         )
         if not yol:
             return
-        try:
+
+        def is_():
             wb = Workbook()
             ws = wb.active
             ws.title = "İşlemler"
-            ws.append(["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"])
+            ws.append(
+                ["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]
+            )
             for satir in self.db.islem_ara():
                 # Formül enjeksiyonuna karşı metin hücreleri temizle
                 ws.append([csv_guvenli(h) for h in satir])
             wb.save(yol)
-            messagebox.showinfo("Başarılı", f"Excel dışa aktarıldı:\n{yol}")
-        except Exception as e:
-            messagebox.showerror("Hata", str(e))
+            return f"Excel dışa aktarıldı:\n{yol}"
+
+        self._arka_planda(is_, "Excel dışa aktarıldı.")
 
     def _pdf_aktar(self):
-        from tkinter import filedialog, messagebox
+        from tkinter import filedialog
 
         try:
             from reportlab.lib import colors
@@ -589,7 +648,9 @@ class Dashboard(ctk.CTkFrame):
                 Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
             )
         except ImportError:
-            messagebox.showerror("Hata", "reportlab kütüphanesi gerekli.")
+            messagebox.showerror(
+                "Hata", "PDF dışa aktarımı bu kurulumda kullanılamıyor."
+            )
             return
 
         yol = filedialog.asksaveasfilename(
@@ -597,17 +658,17 @@ class Dashboard(ctk.CTkFrame):
         )
         if not yol:
             return
-        try:
+
+        def is_():
             doc = SimpleDocTemplate(yol, pagesize=A4, topMargin=20 * mm)
             styles = getSampleStyleSheet()
-            elemanlar = []
-            elemanlar.append(Paragraph("FINEding — İşlem Raporu", styles["Title"]))
-            elemanlar.append(Spacer(1, 10 * mm))
-
+            elemanlar = [
+                Paragraph("FINEding — İşlem Raporu", styles["Title"]),
+                Spacer(1, 10 * mm),
+            ]
             veri = [["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]]
             for satir in self.db.islem_ara():
                 veri.append([str(csv_guvenli(s)) for s in satir])
-
             tablo = Table(veri)
             tablo.setStyle(
                 TableStyle([
@@ -619,9 +680,9 @@ class Dashboard(ctk.CTkFrame):
             )
             elemanlar.append(tablo)
             doc.build(elemanlar)
-            messagebox.showinfo("Başarılı", f"PDF dışa aktarıldı:\n{yol}")
-        except Exception as e:
-            messagebox.showerror("Hata", str(e))
+            return f"PDF dışa aktarıldı:\n{yol}"
+
+        self._arka_planda(is_, "PDF dışa aktarıldı.")
 
     def _ice_aktar(self):
         """CSV veya Excel dosyasından toplu işlem içe aktarır."""
@@ -780,6 +841,6 @@ class Dashboard(ctk.CTkFrame):
         elif mod == "hafta":
             islemler = self.db.haftalik_islemler()
         else:
-            islemler = self.db.islem_ara()
+            islemler = self.db.islem_ara(limit=200)
         for satir in islemler:
             self.tablo.insert("", "end", values=satir)

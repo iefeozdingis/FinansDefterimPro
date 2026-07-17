@@ -5,6 +5,7 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
+from ui import tema
 from ui.utils import (
     para_formatla,
     tarih_bind,
@@ -28,7 +29,7 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         self.tabview = ctk.CTkTabview(
             self,
             corner_radius=16,
-            fg_color="#134e4a",
+            fg_color=tema.KART,
             segmented_button_fg_color="#0f766e",
             segmented_button_selected_color="#0d9488",
             segmented_button_unselected_color="#134e4a",
@@ -753,7 +754,7 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             )
             renk = "#22c55e" if oran >= 90 else "#f59e0b" if oran >= 50 else "#ef4444"
 
-            kart = ctk.CTkFrame(self.h_liste_frame, corner_radius=12, fg_color="#0f172a")
+            kart = ctk.CTkFrame(self.h_liste_frame, corner_radius=12, fg_color=tema.PANEL)
             kart.pack(fill="x", pady=6)
 
             ust = ctk.CTkFrame(kart, fg_color="transparent")

@@ -2,6 +2,7 @@
 
 import customtkinter as ctk
 
+from ui import tema
 from ui.money import para_formatla
 
 
@@ -21,7 +22,7 @@ class BakiyeWidget(ctk.CTkToplevel):
         self.geometry("200x50")
         self.attributes("-topmost", True)
         self.resizable(False, False)
-        self.configure(fg_color="#0f172a")
+        self.configure(fg_color=tema.PANEL)
         self.overrideredirect(True)
 
         # Sağ alt köşe

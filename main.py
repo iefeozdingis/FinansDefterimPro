@@ -1,6 +1,7 @@
 import logging
 import sys
 import threading
+import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 
@@ -281,15 +282,26 @@ class FinedingApp(ctk.CTk):
         self._widget_acik = False
         self._bakiye_widget = None
 
-        # Klavye kısayolları
+        # Klavye kısayolları — sayfa değiştiren kısayollar, kullanıcı bir
+        # giriş alanına yazarken tetiklenmemeli (yoksa _guvenli_gecis formu
+        # yok edip yazılan veriyi kaybettiriyordu). Ctrl+F (arama) ve Ctrl+Q
+        # (çıkış) her yerde çalışır.
+        def _sayfa_kisayolu(fn):
+            def handler(e):
+                w = self.focus_get()
+                if isinstance(w, (ctk.CTkEntry, tk.Entry, ctk.CTkTextbox, tk.Text)):
+                    return
+                fn()
+            return handler
+
         self.bind_all("<Control-f>", lambda e: self._global_arama_ac())
-        self.bind_all("<Control-d>", lambda e: self.dashboard_ac())
-        self.bind_all("<Control-n>", lambda e: self.gelir_ac())
-        self.bind_all("<Control-N>", lambda e: self.gider_ac())
-        self.bind_all("<Control-G>", lambda e: self.grafikler_ac())
-        self.bind_all("<Control-b>", lambda e: self.butce_ac())
-        self.bind_all("<Control-p>", lambda e: self.planlama_ac())
-        self.bind_all("<Control-comma>", lambda e: self.ayarlar_ac())
+        self.bind_all("<Control-d>", _sayfa_kisayolu(self.dashboard_ac))
+        self.bind_all("<Control-n>", _sayfa_kisayolu(self.gelir_ac))
+        self.bind_all("<Control-N>", _sayfa_kisayolu(self.gider_ac))
+        self.bind_all("<Control-G>", _sayfa_kisayolu(self.grafikler_ac))
+        self.bind_all("<Control-b>", _sayfa_kisayolu(self.butce_ac))
+        self.bind_all("<Control-p>", _sayfa_kisayolu(self.planlama_ac))
+        self.bind_all("<Control-comma>", _sayfa_kisayolu(self.ayarlar_ac))
         self.bind_all("<Control-q>", lambda e: self.cikis())
 
     def _menu_butonu_olustur(self, ikon, metin, kisayol, komut, alt=False):
@@ -299,6 +311,8 @@ class FinedingApp(ctk.CTk):
         else:
             frame.pack(fill="x", padx=10, pady=3)
 
+        # Kısayolu butonun sağında soluk göster (önceden yalnızca README'de
+        # yaşıyordu, arayüzde hiç görünmüyordu)
         btn = ctk.CTkButton(
             frame,
             text=f"  {ikon}  {metin}",
@@ -311,7 +325,12 @@ class FinedingApp(ctk.CTk):
             corner_radius=10,
             command=komut,
         )
-        btn.pack(fill="x")
+        btn.pack(fill="x", side="left", expand=True)
+        if kisayol:
+            ctk.CTkLabel(
+                frame, text=kisayol, font=("Segoe UI", 10),
+                text_color="#5e7d78",
+            ).pack(side="right", padx=(0, 12))
 
         # Hover efekti
         def on_enter(e, b=btn):

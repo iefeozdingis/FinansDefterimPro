@@ -3,6 +3,8 @@ from typing import Any, Callable, Optional
 
 import customtkinter as ctk  # type: ignore
 
+from ui import tema
+
 
 class AyarlarSayfasi(ctk.CTkFrame):
     def __init__(
@@ -23,7 +25,7 @@ class AyarlarSayfasi(ctk.CTkFrame):
         kart = ctk.CTkFrame(
             self,
             corner_radius=20,
-            fg_color="#134e4a",
+            fg_color=tema.KART,
             border_width=1,
             border_color="#14b8a6",
         )
@@ -156,7 +158,7 @@ class AyarlarSayfasi(ctk.CTkFrame):
         """Admin için kullanıcı listesini göster."""
         kullanicilar = self.db.kullanici_listele()
 
-        liste_frame = ctk.CTkScrollableFrame(kart, height=160, fg_color="#0f172a")
+        liste_frame = ctk.CTkScrollableFrame(kart, height=160, fg_color=tema.PANEL)
         liste_frame.pack(fill="x", padx=40, pady=(0, 8))
         self._admin_liste_frame = liste_frame
 

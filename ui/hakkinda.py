@@ -2,6 +2,8 @@
 
 import customtkinter as ctk
 
+from ui import tema
+
 
 class HakkindaSayfasi(ctk.CTkFrame):
     def __init__(self, parent, db, dashboard_callback=None):
@@ -13,7 +15,7 @@ class HakkindaSayfasi(ctk.CTkFrame):
         kart = ctk.CTkScrollableFrame(
             self,
             corner_radius=20,
-            fg_color="#134e4a",
+            fg_color=tema.KART,
             border_width=1,
             border_color="#14b8a6",
         )

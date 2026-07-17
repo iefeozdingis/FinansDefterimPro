@@ -117,8 +117,7 @@ class GrafiklerSayfasi(ctk.CTkFrame):
 
         gelirler = self.db.kategori_toplamlari("Gelir")
         if gelirler:
-            labels = [item[0] for item in gelirler[:5]]
-            values = [item[1] for item in gelirler[:5]]
+            labels, values = self._diger_grupla(gelirler)
             _, metin1, autometin1 = ax2.pie(values, labels=labels, autopct="%1.1f%%")
             pasta_metinler.append(metin1)
             pasta_metinler.append(autometin1)
@@ -132,13 +131,12 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         ax3 = fig2.add_subplot(111)
         giderler = self.db.kategori_toplamlari("Gider")
         if giderler:
-            labels2 = [item[0] for item in giderler[:5]]
-            values2 = [item[1] for item in giderler[:5]]
+            labels2, values2 = self._diger_grupla(giderler)
             _, metin2, autometin2 = ax3.pie(
                 values2,
                 labels=labels2,
                 autopct="%1.1f%%",
-                colors=["#c0392b", "#e74c3c", "#e67e22", "#f39c12", "#d35400"],
+                colors=["#c0392b", "#e74c3c", "#e67e22", "#f39c12", "#d35400", "#7f8c8d"],
             )
             pasta_metinler.append(metin2)
             pasta_metinler.append(autometin2)
@@ -161,6 +159,24 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
         self._canvaslar.append(canvas)
+
+    @staticmethod
+    def _diger_grupla(kategoriler, ilk=5):
+        """İlk N kategoriyi tutar, kalanları 'Diğer' diliminde toplar.
+
+        Önceden yalnızca ilk 5 çiziliyor, kalanlar sessizce atılıyordu;
+        bu yüzden yüzdeler yanıltıcıydı (toplam %100 değil). Artık tüm
+        kategoriler temsil edilir.
+        """
+        temiz = [(str(k), float(v)) for k, v in kategoriler if v]
+        ilk_kisim = temiz[:ilk]
+        kalan = temiz[ilk:]
+        labels = [k for k, _ in ilk_kisim]
+        values = [v for _, v in ilk_kisim]
+        if kalan:
+            labels.append("Diğer")
+            values.append(sum(v for _, v in kalan))
+        return labels, values
 
     def _aylik_veri(self):
         """SQL tabanlı aylık özet — tüm veriyi RAM'e çekmez."""

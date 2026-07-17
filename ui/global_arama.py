@@ -62,13 +62,13 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
         if not metin:
             return
 
-        for row in self.db.islem_ara(metin)[:30]:
+        for row in self.db.islem_ara(metin, limit=30):
             tarih, tur, kategori, aciklama, tutar = row[1], row[2], row[3], row[4], row[5]
             self.sonuc_liste.insert(
                 "", "end",
                 values=(tur, tarih, kategori, aciklama or "", para_formatla(tutar)),
             )
-            self._sonuclar.append("islem")
+            self._sonuclar.append(("islem", row[0]))
 
         metin_kucuk = metin.lower()
         for b in self.db.borclari_listele("Tümü"):
@@ -81,16 +81,22 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
                         b["aciklama"], para_formatla(b['kalan_tutar']),
                     ),
                 )
-                self._sonuclar.append("borc")
+                # Kayıt tipi + id'yi sakla ki doğru sekme/satıra götürebilelim
+                self._sonuclar.append(("borc", b["id"]))
 
     def _sonuca_git(self, event=None):
         secili = self.sonuc_liste.selection()
         if not secili:
             return
         idx = self.sonuc_liste.index(secili[0])
-        tip = self._sonuclar[idx]
+        tip, kayit_id = self._sonuclar[idx]
         self.destroy()
         if tip == "islem":
             self._dashboard_ac()
         else:
-            self._planlama_ac()
+            # Borç/alacak: doğrudan Borçlar sekmesine ve ilgili kayda götür
+            try:
+                self._planlama_ac(sekme="borc", kayit_id=kayit_id)
+            except TypeError:
+                # Geriye uyumluluk: eski imza (parametresiz)
+                self._planlama_ac()

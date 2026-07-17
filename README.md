@@ -5,7 +5,7 @@
 **Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-18%2F18%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-61%2F61%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 

@@ -16,7 +16,16 @@ from ui.utils import (
 
 
 class PlanlamaSayfasi(ctk.CTkFrame):
-    def __init__(self, parent, db, dashboard_callback=None):
+    # Global aramadan derin bağlantı için sekme adı eşlemesi
+    SEKME_ADLARI = {
+        "planlama": "📋 Aylık Planlama",
+        "borc": "💳 Borçlar & Alacaklar",
+        "tekrarlayan": "🔄 Tekrarlayan",
+        "tasarruf": "🎯 Tasarruf Hedefleri",
+    }
+
+    def __init__(self, parent, db, dashboard_callback=None,
+                 baslangic_sekme=None, secili_kayit=None):
         super().__init__(parent, fg_color="transparent")
         self.db = db
         self.dashboard_callback = dashboard_callback
@@ -45,6 +54,25 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         self._borc_alacak_olustur()
         self._tekrarlayan_olustur()
         self._tasarruf_olustur()
+
+        # Derin bağlantı: global aramadan gelindiyse ilgili sekmeyi aç ve
+        # kaydı seç (önceden hep ilk sekme açılıyor, kayıt seçili gelmiyordu)
+        if baslangic_sekme in self.SEKME_ADLARI:
+            try:
+                self.tabview.set(self.SEKME_ADLARI[baslangic_sekme])
+            except Exception:
+                pass
+            if baslangic_sekme == "borc" and secili_kayit is not None:
+                self.after(100, lambda: self._borc_sec(secili_kayit))
+
+    def _borc_sec(self, borc_id):
+        """Verilen borç kaydını tabloda seçili hale getirir."""
+        for item in self.b_tablo.get_children():
+            deger = self.b_tablo.item(item)["values"]
+            if deger and str(deger[0]) == str(borc_id):
+                self.b_tablo.selection_set(item)
+                self.b_tablo.see(item)
+                break
 
     # =========================================
     # AYLIK PLANLAMA SEKMESİ
@@ -671,6 +699,12 @@ class PlanlamaSayfasi(ctk.CTkFrame):
     def _tekrarlayan_sil(self):
         secili = self.t_liste.selection()
         if not secili:
+            messagebox.showwarning("Uyarı", "Silmek için bir satır seçin.")
+            return
+        # Diğer silme işlemleriyle tutarlı onay (önceden onaysız siliyordu)
+        if not messagebox.askyesno(
+            "Sil", "Bu tekrarlayan işlem kuralı silinsin mi?"
+        ):
             return
         id_ = self.t_liste.item(secili[0])["values"][0]
         self.db.tekrarlayan_sil(id_)

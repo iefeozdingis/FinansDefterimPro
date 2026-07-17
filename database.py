@@ -658,16 +658,25 @@ class Database:
                 )
 
     def import_csv(self, path: str) -> int:
-        """CSV dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner."""
+        """CSV dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner.
+
+        Atlanan satır sayısı ayrıca self.son_ice_aktarim_atlanan'da tutulur
+        (UI kullanıcıya kaç satırın neden alınamadığını gösterebilsin diye)."""
         eklenen = 0
+        atlanan = 0
         with open(path, "r", encoding="utf-8-sig") as dosya:
             reader = csv.DictReader(dosya)
             for satir in reader:
                 try:
-                    eklenen += self._satir_ekle_guvenli(satir)
+                    n = self._satir_ekle_guvenli(satir)
+                    eklenen += n
+                    if n == 0:
+                        atlanan += 1
                 except (ValueError, KeyError):
+                    atlanan += 1
                     continue
         self.conn.commit()
+        self.son_ice_aktarim_atlanan = atlanan
         return eklenen
 
     def import_excel(self, path: str) -> int:
@@ -698,6 +707,7 @@ class Database:
                     indeksler[eslesme[h]] = i
 
             eklenen = 0
+            atlanan = 0
             for row in satirlar:
                 if row is None or all(v is None for v in row):
                     continue
@@ -710,12 +720,17 @@ class Database:
                         "tutar": row[indeksler["tutar"]] if "tutar" in indeksler else 0,
                         "etiketler": row[indeksler["etiketler"]] if "etiketler" in indeksler else "",
                     }
-                    eklenen += self._satir_ekle_guvenli(
+                    n = self._satir_ekle_guvenli(
                         {k: ("" if v is None else str(v)) for k, v in satir.items()}
                     )
+                    eklenen += n
+                    if n == 0:
+                        atlanan += 1
                 except (ValueError, KeyError):
+                    atlanan += 1
                     continue
             self.conn.commit()
+            self.son_ice_aktarim_atlanan = atlanan
             return eklenen
         finally:
             wb.close()
@@ -785,6 +800,27 @@ class Database:
             (ay, yil, self.aktif_kullanici_id),
         )
         return self.cursor.fetchall()
+
+    def butce_sil(self, ay: int, yil: int, kategori: str) -> None:
+        self.cursor.execute(
+            "DELETE FROM butceler WHERE ay=? AND yil=? AND kategori=? "
+            "AND kullanici_id=?",
+            (ay, yil, kategori, self.aktif_kullanici_id),
+        )
+        self.conn.commit()
+
+    def butce_kopyala(
+        self, kaynak_ay: int, kaynak_yil: int, hedef_ay: int, hedef_yil: int
+    ) -> int:
+        """Bir ayın bütçelerini başka aya kopyalar (ay devri).
+
+        Yeni ay başladığında bütçeler 'hiç tanımlanmamış' gibi kaybolmasın
+        diye önceki aydan kopyalama sağlar. Kopyalanan kalem sayısını döner.
+        """
+        kaynak = self.butce_listele(kaynak_ay, kaynak_yil)
+        for kategori, tutar in kaynak:
+            self.kaydet_butce(hedef_ay, hedef_yil, kategori, tutar)
+        return len(kaynak)
 
     def butce_durumu(self, ay: int, yil: int) -> List[Dict[str, Any]]:
         self.cursor.execute(

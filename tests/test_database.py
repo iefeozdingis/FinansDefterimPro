@@ -544,6 +544,39 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.db.geri_yukle(str(yedek))
 
+    def test_butce_kopyala(self):
+        """Önceki ayın bütçesi yeni aya kopyalanabilmeli (#34)."""
+        self.db.kaydet_butce(6, 2026, "Market", 3000)
+        self.db.kaydet_butce(6, 2026, "Kira", 8000)
+        n = self.db.butce_kopyala(6, 2026, 7, 2026)
+        self.assertEqual(n, 2)
+        temmuz = dict(self.db.butce_listele(7, 2026))
+        self.assertEqual(temmuz["Market"], 3000.0)
+        self.assertEqual(temmuz["Kira"], 8000.0)
+
+    def test_butce_sil(self):
+        """Bütçe kategorisi silinebilmeli (#37)."""
+        self.db.kaydet_butce(7, 2026, "Market", 3000)
+        self.db.kaydet_butce(7, 2026, "Kira", 8000)
+        self.db.butce_sil(7, 2026, "Market")
+        kalan = dict(self.db.butce_listele(7, 2026))
+        self.assertNotIn("Market", kalan)
+        self.assertIn("Kira", kalan)
+
+    def test_import_atlanan_raporu(self):
+        """İçe aktarmada atlanan satır sayısı raporlanmalı (#40)."""
+        import csv as csv_mod
+        csv_yol = Path(self.temp_dir.name) / "karisik.csv"
+        with open(csv_yol, "w", newline="", encoding="utf-8") as f:
+            w = csv_mod.writer(f)
+            w.writerow(["tarih", "tur", "kategori", "aciklama", "tutar"])
+            w.writerow(["01.07.2026", "Gelir", "Maaş", "ok", "5000"])
+            w.writerow(["", "Geçersiz", "", "", ""])  # atlanmalı
+            w.writerow(["hatalitar", "Gider", "X", "", "100"])  # tarih hatası
+        eklenen = self.db.import_csv(str(csv_yol))
+        self.assertEqual(eklenen, 1)
+        self.assertEqual(self.db.son_ice_aktarim_atlanan, 2)
+
     def test_gunluk_haftalik(self):
         """Günlük ve haftalık filtre testi."""
         from datetime import date

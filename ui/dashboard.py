@@ -405,6 +405,28 @@ class Dashboard(ctk.CTkFrame):
         satirlar = self.db.islem_ara(arama_metni, tur, limit=200)
         for satir in satirlar:
             self.tablo.insert("", "end", values=satir)
+
+        # Boş durum: hiç işlem yoksa (ve arama filtresi de yoksa) kullanıcıyı
+        # ilk işlemini eklemeye yönlendiren bir panel göster
+        if not satirlar and not arama_metni and tur_secili == "Tümü":
+            bos = ctk.CTkFrame(tablo_frame, fg_color="transparent")
+            bos.pack(pady=20)
+            ctk.CTkLabel(
+                bos, text="👋 Henüz işlemin yok",
+                font=("Segoe UI", 16, "bold"), text_color=tema.METIN_TEAL,
+            ).pack(pady=(0, 4))
+            ctk.CTkLabel(
+                bos, text="Başlamak için ilk gelir veya giderini ekle.",
+                font=("Segoe UI", 12), text_color="#94a3b8",
+            ).pack(pady=(0, 10))
+            ctk.CTkButton(
+                bos, text="💰 İlk Gelirini Ekle", width=180, fg_color="#2e8b57",
+                command=self._hizli_gelir,
+            ).pack(pady=3)
+            ctk.CTkButton(
+                bos, text="💸 İlk Giderini Ekle", width=180, fg_color="#c0392b",
+                command=self._hizli_gider,
+            ).pack(pady=3)
         if len(satirlar) >= 200:
             ctk.CTkLabel(
                 tablo_frame,
@@ -709,7 +731,14 @@ class Dashboard(ctk.CTkFrame):
                 eklenen = self.db.import_excel(yol)
             else:
                 eklenen = self.db.import_csv(yol)
-            messagebox.showinfo("Başarılı", f"{eklenen} işlem içe aktarıldı.")
+            atlanan = getattr(self.db, "son_ice_aktarim_atlanan", 0)
+            mesaj = f"{eklenen} işlem içe aktarıldı."
+            if atlanan:
+                mesaj += (
+                    f"\n{atlanan} satır alınamadı (eksik/hatalı tarih, tutar "
+                    "veya Gelir/Gider dışı tür)."
+                )
+            messagebox.showinfo("İçe Aktarma", mesaj)
             self.yenile()
         except Exception as e:
             messagebox.showerror("Hata", f"İçe aktarma başarısız: {e}")
@@ -776,7 +805,7 @@ class Dashboard(ctk.CTkFrame):
 
         pencere = ctk.CTkToplevel(self)
         pencere.title(f"Hızlı {tur} Ekle")
-        pencere.geometry("380x280")
+        pencere.geometry("380x340")
         pencere.resizable(False, False)
         pencere.transient(self.winfo_toplevel())
         pencere.grab_set()
@@ -794,6 +823,27 @@ class Dashboard(ctk.CTkFrame):
         tutar_bind(tutar_entry)
         tutar_entry.focus()
 
+        # Kategori seçimi — önceden sessizce "Diğer"e sabitleniyor, bu da
+        # bütçe çubukları ve kategori grafikleriyle çelişen kirli veri
+        # üretiyordu. Artık kullanıcı kategori seçebilir.
+        from ui.gelir import VARSAYILAN_GELIR_KATEGORILER
+        from ui.gider import VARSAYILAN_GIDER_KATEGORILER
+        if tur == "Gelir":
+            kat_liste = VARSAYILAN_GELIR_KATEGORILER + [
+                k for k in self.db.kategorileri_getir("Gelir")
+                if k not in VARSAYILAN_GELIR_KATEGORILER
+            ]
+        else:
+            kat_liste = VARSAYILAN_GIDER_KATEGORILER + [
+                k for k in self.db.kategorileri_getir("Gider")
+                if k not in VARSAYILAN_GIDER_KATEGORILER
+            ]
+        kategori_combo = ctk.CTkComboBox(
+            pencere, width=280, values=kat_liste, font=("Segoe UI", 13)
+        )
+        kategori_combo.set(kat_liste[0] if kat_liste else "Diğer")
+        kategori_combo.pack(pady=8)
+
         aciklama_entry = ctk.CTkEntry(pencere, width=280, placeholder_text="Açıklama (opsiyonel)", font=("Segoe UI", 13))
         aciklama_entry.pack(pady=8)
 
@@ -804,11 +854,12 @@ class Dashboard(ctk.CTkFrame):
                     messagebox.showwarning("Uyarı", "Tutar 0'dan büyük olmalı.")
                     return
                 aciklama = aciklama_entry.get().strip() or None
+                kategori = kategori_combo.get().strip() or "Diğer"
                 bugun = datetime.now().strftime("%d.%m.%Y")
                 if tur == "Gelir":
-                    self.db.gelir_ekle(bugun, "Diğer", aciklama, t)
+                    self.db.gelir_ekle(bugun, kategori, aciklama, t)
                 else:
-                    self.db.gider_ekle(bugun, "Diğer", aciklama, t)
+                    self.db.gider_ekle(bugun, kategori, aciklama, t)
                 messagebox.showinfo("Başarılı", f"{tur} eklendi: {para_formatla(t)}")
                 pencere.destroy()
                 self.yenile()

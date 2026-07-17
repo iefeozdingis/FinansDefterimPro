@@ -225,10 +225,11 @@ class FinedingApp(ctk.CTk):
             ("📋", "Planlama & Takip", "Ctrl+P", self.planlama_ac),
         ]
 
-        self.menu_butonlari = []
+        self.menu_butonlari = {}
         for ikon, metin, kisayol, komut in menu_ogeleri:
             btn = self._menu_butonu_olustur(ikon, metin, kisayol, komut)
-            self.menu_butonlari.append(btn)
+            self.menu_butonlari[metin] = btn
+        self._aktif_menu = None
 
         # Alt ayraç
         ctk.CTkFrame(self.menu, height=1, fg_color="#334155").pack(
@@ -336,13 +337,29 @@ class FinedingApp(ctk.CTk):
         def on_enter(e, b=btn):
             b.configure(fg_color="#0d9488", text_color="#ffffff")
 
-        def on_leave(e, b=btn):
-            b.configure(fg_color="transparent", text_color="#cbd5e1")
+        def on_leave(e, b=btn, m=metin):
+            # Aktif sayfanın butonu vurgulu kalmalı (hover'dan çıkınca sönmez)
+            if getattr(self, "_aktif_menu", None) == m:
+                b.configure(fg_color="#0f766e", text_color="#ffffff")
+            else:
+                b.configure(fg_color="transparent", text_color="#cbd5e1")
 
         btn.bind("<Enter>", on_enter)
         btn.bind("<Leave>", on_leave)
 
         return btn
+
+    def _menu_aktif(self, metin):
+        """Aktif sayfanın menü butonunu kalıcı olarak vurgular (#36)."""
+        self._aktif_menu = metin
+        for ad, btn in getattr(self, "menu_butonlari", {}).items():
+            try:
+                if ad == metin:
+                    btn.configure(fg_color="#0f766e", text_color="#ffffff")
+                else:
+                    btn.configure(fg_color="transparent", text_color="#cbd5e1")
+            except Exception:
+                pass
 
     # =====================================
     # SAYFA GEÇİŞİ
@@ -425,6 +442,7 @@ class FinedingApp(ctk.CTk):
     # =====================================
 
     def dashboard_ac(self):
+        self._menu_aktif("Dashboard")
         self._guvenli_gecis(Dashboard)
 
     # =====================================
@@ -432,6 +450,7 @@ class FinedingApp(ctk.CTk):
     # =====================================
 
     def gelir_ac(self):
+        self._menu_aktif("Gelir Ekle")
         self._guvenli_gecis(GelirSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
@@ -439,6 +458,7 @@ class FinedingApp(ctk.CTk):
     # =====================================
 
     def gider_ac(self):
+        self._menu_aktif("Gider Ekle")
         self._guvenli_gecis(GiderSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
@@ -446,20 +466,26 @@ class FinedingApp(ctk.CTk):
     # =====================================
 
     def butce_ac(self):
+        self._menu_aktif("Bütçe")
         self._guvenli_gecis(ButceSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================
     # PLANLAMA
     # =====================================
 
-    def planlama_ac(self):
-        self._guvenli_gecis(PlanlamaSayfasi, dashboard_callback=self.dashboard_ac)
+    def planlama_ac(self, sekme=None, kayit_id=None):
+        self._menu_aktif("Planlama & Takip")
+        self._guvenli_gecis(
+            PlanlamaSayfasi, dashboard_callback=self.dashboard_ac,
+            baslangic_sekme=sekme, secili_kayit=kayit_id,
+        )
 
     # =====================================
     # GRAFİKLER
     # =====================================
 
     def grafikler_ac(self):
+        self._menu_aktif("Grafikler")
         self._guvenli_gecis(GrafiklerSayfasi, dashboard_callback=self.dashboard_ac)
 
     # =====================================

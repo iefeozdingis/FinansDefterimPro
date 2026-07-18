@@ -4,7 +4,7 @@ import customtkinter as ctk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from ui.utils import tema_renkleri
+from ui.utils import para_formatla, tema_renkleri
 
 
 class GrafiklerSayfasi(ctk.CTkFrame):
@@ -148,17 +148,21 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         self._grafik_stil_uygula(fig, ax1, ax2, pasta_metinler=pasta_metinler[:2])
         self._grafik_stil_uygula(fig2, ax3, pasta_metinler=pasta_metinler[2:])
 
-        fig2.tight_layout()
-        canvas2 = FigureCanvasTkAgg(fig2, master=self._grafik_frame)
-        canvas2.draw()
-        canvas2.get_tk_widget().pack(fill="both", expand=True, pady=(10, 0))
-        self._canvaslar.append(canvas2)
-
+        # ÖNCE ana figür (aylık bar + gelir pastası), SONRA gider pastası.
+        # Ters sırada paketlemek küçük gider pastasını en üste koyuyor, asıl
+        # grafik altta kalıyordu; kullanıcı hangisinin ana grafik olduğunu
+        # çözemiyordu.
         fig.tight_layout()
         canvas = FigureCanvasTkAgg(fig, master=self._grafik_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill="both", expand=True)
         self._canvaslar.append(canvas)
+
+        fig2.tight_layout()
+        canvas2 = FigureCanvasTkAgg(fig2, master=self._grafik_frame)
+        canvas2.draw()
+        canvas2.get_tk_widget().pack(fill="both", expand=True, pady=(10, 0))
+        self._canvaslar.append(canvas2)
 
     @staticmethod
     def _diger_grupla(kategoriler, ilk=5):
@@ -214,9 +218,9 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         renk = tema_renkleri()
         # Değerleri barların üstüne yaz
         for i, v in enumerate(bu_deger):
-            ax.text(i - w / 2, v + 50, f"{v:,.0f}", ha="center", fontsize=9, color=renk["metin"])
+            ax.text(i - w / 2, v + 50, para_formatla(v, sembol=False, ondalik=0), ha="center", fontsize=9, color=renk["metin"])
         for i, v in enumerate(gecen_deger):
-            ax.text(i + w / 2, v + 50, f"{v:,.0f}", ha="center", fontsize=9, color=renk["metin"])
+            ax.text(i + w / 2, v + 50, para_formatla(v, sembol=False, ondalik=0), ha="center", fontsize=9, color=renk["metin"])
 
         self._grafik_stil_uygula(fig, ax)
 
@@ -253,9 +257,9 @@ class GrafiklerSayfasi(ctk.CTkFrame):
 
         renk = tema_renkleri()
         for i, v in enumerate(gelirler):
-            ax.text(i - w / 2, v, f"{v:,.0f}", ha="center", va="bottom", fontsize=9, color=renk["metin"])
+            ax.text(i - w / 2, v, para_formatla(v, sembol=False, ondalik=0), ha="center", va="bottom", fontsize=9, color=renk["metin"])
         for i, v in enumerate(giderler):
-            ax.text(i + w / 2, v, f"{v:,.0f}", ha="center", va="bottom", fontsize=9, color=renk["metin"])
+            ax.text(i + w / 2, v, para_formatla(v, sembol=False, ondalik=0), ha="center", va="bottom", fontsize=9, color=renk["metin"])
 
         self._grafik_stil_uygula(fig, ax)
 

@@ -1071,7 +1071,17 @@ class BorcOdemePenceresi(ctk.CTkToplevel):
             self, text="Gelir/gider işlemi olarak da kaydet"
         )
         self.islem_olustur.select()
-        self.islem_olustur.pack(pady=8)
+        self.islem_olustur.pack(pady=(8, 0))
+
+        # Ne yaptığını açıkça söyle: kutu varsayılan işaretli olduğu için,
+        # harcamayı ayrıca kaydeden kullanıcıda habersiz mükerrer gider
+        # oluşuyor ve toplam gider şişiyordu.
+        ctk.CTkLabel(
+            self,
+            text="Bu ödemeyi ayrıca harcama listene ekler",
+            font=("Segoe UI", 11),
+            text_color="#94a3b8",
+        ).pack(pady=(0, 8))
 
         ctk.CTkButton(
             self, text="💾 Ödemeyi Kaydet", width=220, fg_color="#16a34a",

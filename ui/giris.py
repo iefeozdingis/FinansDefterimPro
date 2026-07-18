@@ -6,6 +6,8 @@ from tkinter import messagebox
 import customtkinter as ctk
 from PIL import Image
 
+from database import MIN_SIFRE_UZUNLUK
+
 
 class GirisEkrani(ctk.CTk):
     """Uygulama başlangıcında gösterilen giriş/kayıt penceresi."""
@@ -257,7 +259,16 @@ class KayitPenceresi(ctk.CTkToplevel):
             font=("Segoe UI", 13),
             show="•",
         )
-        self.sifre.pack(pady=8)
+        self.sifre.pack(pady=(8, 0))
+
+        # Şifre kuralını ÖNDEN göster: kural yalnızca Kaydol'a basınca hata
+        # olarak çıkıyordu, kullanıcı neden reddedildiğini tahmin ediyordu.
+        ctk.CTkLabel(
+            self,
+            text=f"En az {MIN_SIFRE_UZUNLUK} karakter",
+            font=("Segoe UI", 11),
+            text_color="#94a3b8",
+        ).pack(pady=(2, 6))
 
         self.sifre_tekrar = ctk.CTkEntry(
             self,

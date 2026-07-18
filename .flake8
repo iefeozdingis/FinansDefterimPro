@@ -1,4 +1,7 @@
 [flake8]
-max-line-length = 88
+# Satır uzunluğu bilinçli olarak black'e devredilmiştir (E501 kapalı).
+# max-line-length burada TANIMLI DEĞİL: 88 yazıp E501'i ignore etmek,
+# sınırın uygulandığı izlenimi veren ama hiçbir etkisi olmayan bir
+# yapılandırmaydı.
 extend-ignore = E203, E501
 exclude = .venv, .git, __pycache__

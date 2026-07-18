@@ -16,11 +16,15 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
         self._dashboard_ac = dashboard_ac
         self._planlama_ac = planlama_ac
         self._sonuclar = []
+        self._ara_after_id = None
 
         self.title("🔍 Ara")
         self.geometry("640x440")
         self.transient(parent.winfo_toplevel())
-        self.attributes("-topmost", True)
+        # Pencereyi öne al ama KALICI topmost yapma: geri alınmayan topmost,
+        # kullanıcı ana pencereye dönünce her şeyin önünde asılı kalıyor ve
+        # düzenleme/onay pencerelerini kapatabiliyordu.
+        self.lift()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         ctk.CTkLabel(
@@ -32,7 +36,7 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
             placeholder_text="Kategori, açıklama, etiket, kişi veya tutar yazın...",
         )
         self.arama.pack(pady=8)
-        self.arama.bind("<KeyRelease>", self._ara)
+        self.arama.bind("<KeyRelease>", self._ara_zamanla)
         self.arama.bind("<Escape>", lambda e: self.destroy())
         self.arama.bind("<Return>", self._sonuca_git)
 
@@ -55,7 +59,30 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
 
         self.arama.focus_set()
 
+    def _ara_zamanla(self, event=None):
+        """Tuş vuruşlarını 200 ms geciktirir (debounce).
+
+        Her <KeyRelease>'te doğrudan aramak, tüm borç listesini DB'den çekip
+        RAM'de filtreliyordu; kayıt sayısı arttıkça yazarken gecikme oluyordu.
+        """
+        if self._ara_after_id is not None:
+            try:
+                self.after_cancel(self._ara_after_id)
+            except Exception:
+                pass
+        self._ara_after_id = self.after(200, self._ara)
+
+    def destroy(self):
+        if self._ara_after_id is not None:
+            try:
+                self.after_cancel(self._ara_after_id)
+            except Exception:
+                pass
+            self._ara_after_id = None
+        super().destroy()
+
     def _ara(self, event=None):
+        self._ara_after_id = None
         metin = self.arama.get().strip()
         self.sonuc_liste.delete(*self.sonuc_liste.get_children())
         self._sonuclar = []

@@ -8,6 +8,7 @@ import customtkinter as ctk
 from ui import tema
 from ui.utils import (
     para_formatla,
+    para_parse,
     tarih_bind,
     treeview_tema_uygula,
     tutar_bind,
@@ -316,7 +317,13 @@ class PlanlamaSayfasi(ctk.CTkFrame):
             )
         elif self._edit_col == 2:  # Tür
             if yeni_deger not in ("Gelir", "Gider"):
-                yeni_deger = mevcut[4]
+                messagebox.showwarning(
+                    "Geçersiz tür",
+                    "Tür yalnızca 'Gelir' veya 'Gider' olabilir.\n"
+                    "Değişiklik kaydedilmedi.",
+                )
+                self._planlama_yenile()
+                return
             self.db.planlanan_guncelle(
                 self._edit_id, mevcut[3], yeni_deger, mevcut[5] or "", mevcut[6]
             )
@@ -325,13 +332,22 @@ class PlanlamaSayfasi(ctk.CTkFrame):
                 self._edit_id, mevcut[3], mevcut[4], yeni_deger, mevcut[6]
             )
         elif self._edit_col == 4:  # Tutar
+            # Naif float(replace(",", ".")) kullanmak "1.500" girişini 1.5'e
+            # çeviriyordu (1000x hata) ve formatlanmış "1.234,56" değerini
+            # sessizce yutuyordu. Uygulamanın geri kalanıyla aynı ayrıştırıcı.
             try:
-                tutar = float(yeni_deger.replace(",", "."))
-                self.db.planlanan_guncelle(
-                    self._edit_id, mevcut[3], mevcut[4], mevcut[5] or "", tutar
-                )
+                tutar = para_parse(yeni_deger)
             except ValueError:
-                pass
+                messagebox.showwarning(
+                    "Geçersiz tutar",
+                    f"'{yeni_deger}' bir tutar olarak okunamadı.\n"
+                    "Değişiklik kaydedilmedi.",
+                )
+                self._planlama_yenile()
+                return
+            self.db.planlanan_guncelle(
+                self._edit_id, mevcut[3], mevcut[4], mevcut[5] or "", tutar
+            )
 
         self._planlama_yenile()
 

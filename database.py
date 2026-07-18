@@ -9,6 +9,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# ui.money bilinçli olarak GUI-bağımsız saf bir modüldür (tkinter import
+# etmez), bu yüzden veri katmanından güvenle kullanılabilir. Para ayrıştırma
+# tek bir kaynakta tutulur; ikinci bir kopya tutmak sessiz para bozulmasına
+# yol açıyordu (bkz. _tutar_parse).
+from ui.money import para_parse
+
 # ==========================
 # Veritabanı Ayarları
 # ==========================
@@ -737,28 +743,19 @@ class Database:
 
     @staticmethod
     def _tutar_parse(ham: Any) -> float:
-        """İçe aktarımda tutarı hem sade hem Türk (1.234,56) formatından okur."""
+        """İçe aktarımda tutarı hem sade hem Türk (1.234,56) formatından okur.
+
+        Ayrıştırma tek kaynaktan (ui.money.para_parse) yapılır. Buradaki eski
+        kopya "tek nokta" dalını hiç ele almadığı için "45.000" gibi Türk
+        binlik yazımını float("45.000")=45.0 olarak, yani 1000 kat küçük
+        okuyordu. İki ayrıştırıcının ayrışması sessiz para bozulması üretir.
+        """
         if ham is None:
             return 0.0
-        s = str(ham).strip().replace("₺", "").replace(" ", "")
-        if not s:
+        s = str(ham).strip()
+        if not s or s.replace("₺", "").replace(" ", "") == "":
             return 0.0
-        # datetime hücresi vb. sayı olmayan değerleri reddet
-        if any(c not in "0123456789.,-" for c in s):
-            raise ValueError(f"Geçersiz tutar: {ham!r}")
-        son_nokta = s.rfind(".")
-        son_virgul = s.rfind(",")
-        if son_nokta != -1 and son_virgul != -1:
-            ondalik = "." if son_nokta > son_virgul else ","
-            binlik = "," if ondalik == "." else "."
-            s = s.replace(binlik, "").replace(ondalik, ".")
-        elif son_virgul != -1:
-            # Türk formatı: virgül ondalık ayracı
-            if s.count(",") == 1 and len(s) - son_virgul - 1 in (1, 2):
-                s = s.replace(",", ".")
-            else:
-                s = s.replace(",", "")
-        return float(s)
+        return para_parse(s)
 
     def _satir_ekle_guvenli(self, satir: Dict[str, str]) -> int:
         """CSV/Excel içe aktarımı için ortak satır doğrulama ve ekleme mantığı (commit çağırmaz)."""
@@ -1233,11 +1230,18 @@ class Database:
             raise
 
     def borc_odemeleri(self, borc_id: int) -> List[Dict[str, Any]]:
-        """Bir borç/alacağın ödeme geçmişini döner."""
+        """Bir borç/alacağın ödeme geçmişini döner.
+
+        borc_odemeler tablosunda kullanici_id yok; sahiplik borclar tablosuna
+        JOIN ile doğrulanır. Filtresiz hali başka kullanıcının ödeme tutar ve
+        tarihlerini id denemesiyle okunabilir kılıyordu.
+        """
         self.cursor.execute(
-            "SELECT id, tarih, tutar FROM borc_odemeler WHERE borc_id=? "
-            "ORDER BY tarih",
-            (borc_id,),
+            "SELECT o.id, o.tarih, o.tutar FROM borc_odemeler o "
+            "JOIN borclar b ON b.id = o.borc_id "
+            "WHERE o.borc_id=? AND b.kullanici_id=? "
+            "ORDER BY o.tarih",
+            (borc_id, self.aktif_kullanici_id),
         )
         return [
             {"id": r[0], "tarih": r[1], "tutar": float(r[2])}
@@ -1586,21 +1590,10 @@ class Database:
                 a = 1
                 y += 1
 
-    def tekrarlayan_bugun_kontrol(self) -> List[Dict[str, Any]]:
-        """Bugünün gününde aktif tekrarlayan işlemleri getir."""
-        from datetime import datetime
-        bugun_gun = datetime.now().day
-        self.cursor.execute(
-            "SELECT * FROM tekrarlayan WHERE aktif=1 AND gun=?",
-            (bugun_gun,),
-        )
-        return [
-            {
-                "id": r[0], "tur": r[1], "kategori": r[2],
-                "aciklama": r[3], "tutar": r[4], "gun": r[5],
-            }
-            for r in self.cursor.fetchall()
-        ]
+    # tekrarlayan_bugun_kontrol kaldırıldı: hiçbir yerden çağrılmıyordu ve
+    # kullanici_id filtresi olmadığı için canlandırıldığı anda tüm
+    # kullanıcıların tekrarlayan kurallarını sızdıracaktı. Gerçek işleme
+    # yolu tekrarlayan_isle() (izolasyonlu) üzerinden yürüyor.
 
     # ==========================
     # TASARRUF HEDEFLERİ
@@ -1652,9 +1645,13 @@ class Database:
         )
         try:
             self.cursor.execute("BEGIN")
+            # kullanici_id filtresi zorunlu: filtresiz SELECT/UPDATE, başka
+            # bir kullanıcının hedefinin birikimini değiştirip karşı işlemi
+            # çağıranın hesabına yazıyordu (çapraz veri bozulması).
             self.cursor.execute(
-                "SELECT ad, biriken_tutar FROM tasarruf_hedefleri WHERE id=?",
-                (id,),
+                "SELECT ad, biriken_tutar FROM tasarruf_hedefleri "
+                "WHERE id=? AND kullanici_id=?",
+                (id, self.aktif_kullanici_id),
             )
             row = self.cursor.fetchone()
             if row is None:
@@ -1674,8 +1671,9 @@ class Database:
                      self.aktif_kullanici_id),
                 )
             self.cursor.execute(
-                "UPDATE tasarruf_hedefleri SET biriken_tutar=? WHERE id=?",
-                (yeni_biriken, id),
+                "UPDATE tasarruf_hedefleri SET biriken_tutar=? "
+                "WHERE id=? AND kullanici_id=?",
+                (yeni_biriken, id, self.aktif_kullanici_id),
             )
             self.conn.commit()
         except Exception:

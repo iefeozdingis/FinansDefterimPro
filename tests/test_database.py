@@ -117,6 +117,68 @@ class DatabaseTests(unittest.TestCase):
         self.db.oturum_ac(2)
         self.assertEqual(len(self.db.tum_islemler()), 1)
 
+    def test_tutar_parse_binlik_nokta(self):
+        """İçe aktarım Türk binlik ayracını 1000x küçük okumamalı.
+
+        _tutar_parse'ın eski kopyası 'tek nokta' dalını hiç ele almıyordu:
+        float("45.000") = 45.0 → maaş satırı 45 TL olarak içe aktarılıyordu.
+        Artık ui.money.para_parse ile tek kaynaktan ayrıştırılır.
+        """
+        self.assertEqual(self.db._tutar_parse("45.000"), 45000.0)
+        self.assertEqual(self.db._tutar_parse("1.500"), 1500.0)
+        self.assertEqual(self.db._tutar_parse("1.234,56"), 1234.56)
+        self.assertEqual(self.db._tutar_parse("1,234.56"), 1234.56)
+        self.assertEqual(self.db._tutar_parse("12.5"), 12.5)
+        self.assertEqual(self.db._tutar_parse("-1.500"), -1500.0)
+        self.assertEqual(self.db._tutar_parse(""), 0.0)
+        self.assertEqual(self.db._tutar_parse(None), 0.0)
+        with self.assertRaises(ValueError):
+            self.db._tutar_parse("abc")
+
+    def test_tutar_parse_money_ile_ayni(self):
+        """İki ayrıştırıcı ayrışırsa aynı metin farklı tutara çevrilir."""
+        from ui.money import para_parse
+        for ham in ("1500", "1.500", "1.234,56", "1,234.56", "12,5", "12.5",
+                    "1.500.000,00", "-45.000"):
+            with self.subTest(ham=ham):
+                self.assertEqual(self.db._tutar_parse(ham), para_parse(ham))
+
+    def test_tasarruf_katki_izolasyonu(self):
+        """Katkı başka kullanıcının hedefine yazılamamalı."""
+        self.db.kullanici_kaydet("admin", "admin123", "Admin")
+        self.db.kullanici_kaydet("ayse", "ayse1234", "Ayşe")
+
+        self.db.oturum_ac(2)
+        self.db.tasarruf_hedefi_ekle("Ayşe tatil", 10000, "01.12.2026")
+        ayse_hedef = self.db.tasarruf_hedefleri_listele()[0]["id"]
+
+        # Kullanıcı 1, Ayşe'nin hedefine katkı yapamamalı
+        self.db.oturum_ac(1)
+        with self.assertRaises(ValueError):
+            self.db.tasarruf_katki_ekle(ayse_hedef, 500)
+        # Ayşe'nin birikimi değişmemeli ve kullanıcı 1'e işlem yazılmamalı
+        self.assertEqual(len(self.db.tum_islemler()), 0)
+        self.db.oturum_ac(2)
+        self.assertEqual(
+            self.db.tasarruf_hedefleri_listele()[0]["biriken_tutar"], 0.0
+        )
+
+    def test_borc_odemeleri_izolasyonu(self):
+        """Ödeme geçmişi başka kullanıcının borcu için sızmamalı."""
+        self.db.kullanici_kaydet("admin", "admin123", "Admin")
+        self.db.kullanici_kaydet("ayse", "ayse1234", "Ayşe")
+
+        self.db.oturum_ac(2)
+        borc_id = self.db.borc_ekle(
+            "Borç", "Ayşe borcu", "Mehmet", 1000, 1000, "01.07.2026", "01.12.2026"
+        )
+        self.db.borc_odeme_yap(borc_id, 250, "15.07.2026")
+        self.assertEqual(len(self.db.borc_odemeleri(borc_id)), 1)
+
+        # Kullanıcı 1 aynı borç id'siyle geçmişi görememeli
+        self.db.oturum_ac(1)
+        self.assertEqual(self.db.borc_odemeleri(borc_id), [])
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)

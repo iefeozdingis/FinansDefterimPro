@@ -560,6 +560,8 @@ class Dashboard(ctk.CTkFrame):
         thread'de gösterilir. is_fonksiyonu bir sonuç metni döner (ya da None)."""
         import threading
 
+        kok = self.winfo_toplevel()
+
         for b in butonlar:
             try:
                 b.configure(state="disabled")
@@ -586,8 +588,11 @@ class Dashboard(ctk.CTkFrame):
                     messagebox.showinfo("Başarılı", sonuc)
                 else:
                     messagebox.showinfo("Başarılı", basari_mesaji)
+            # Bildirimi sayfanın kendisi yerine kök pencere üzerinden
+            # zamanla: dışa aktarım sürerken kullanıcı başka sayfaya geçerse
+            # bu frame destroy edilmiş olur ve sonuç sessizce kaybolurdu.
             try:
-                self.after(0, bitir)
+                kok.after(0, bitir)
             except Exception:
                 pass
 
@@ -603,6 +608,12 @@ class Dashboard(ctk.CTkFrame):
         if not yol:
             return
 
+        # DB okuması ANA THREAD'de yapılır. SQLite bağlantısı ana thread'de
+        # kurulduğu için (check_same_thread=True) worker thread'den
+        # self.db.* çağırmak ProgrammingError fırlatıyor ve dışa aktarım
+        # hiç çalışmıyordu. Thread'e yalnızca dosya yazma işi kalır.
+        satirlar = self.db.islem_ara()
+
         def is_():
             from datetime import datetime
             with open(yol, "w", newline="", encoding="utf-8-sig") as f:
@@ -610,7 +621,7 @@ class Dashboard(ctk.CTkFrame):
                 writer.writerow(
                     ["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]
                 )
-                for satir in self.db.islem_ara():
+                for satir in satirlar:
                     try:
                         dt = datetime.strptime(str(satir[1]), "%Y-%m-%d")
                         tarih_goster = dt.strftime("%d.%m.%Y")
@@ -643,6 +654,9 @@ class Dashboard(ctk.CTkFrame):
         if not yol:
             return
 
+        # DB okuması ana thread'de (bkz. _csv_aktar'daki açıklama)
+        satirlar = self.db.islem_ara()
+
         def is_():
             wb = Workbook()
             ws = wb.active
@@ -650,7 +664,7 @@ class Dashboard(ctk.CTkFrame):
             ws.append(
                 ["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]
             )
-            for satir in self.db.islem_ara():
+            for satir in satirlar:
                 # Formül enjeksiyonuna karşı metin hücreleri temizle
                 ws.append([csv_guvenli(h) for h in satir])
             wb.save(yol)
@@ -681,6 +695,9 @@ class Dashboard(ctk.CTkFrame):
         if not yol:
             return
 
+        # DB okuması ana thread'de (bkz. _csv_aktar'daki açıklama)
+        satirlar = self.db.islem_ara()
+
         def is_():
             doc = SimpleDocTemplate(yol, pagesize=A4, topMargin=20 * mm)
             styles = getSampleStyleSheet()
@@ -689,7 +706,7 @@ class Dashboard(ctk.CTkFrame):
                 Spacer(1, 10 * mm),
             ]
             veri = [["ID", "Tarih", "Tür", "Kategori", "Açıklama", "Tutar", "Etiket"]]
-            for satir in self.db.islem_ara():
+            for satir in satirlar:
                 veri.append([str(csv_guvenli(s)) for s in satir])
             tablo = Table(veri)
             tablo.setStyle(

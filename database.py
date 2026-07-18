@@ -5,6 +5,7 @@ import logging
 import secrets
 import shutil
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -173,6 +174,23 @@ class Database:
         conn.execute("PRAGMA busy_timeout=10000")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
+
+    @contextmanager
+    def _transaction(self):
+        """Çok adımlı yazmaları atomik yapar.
+
+        Korumasız hali (yalnızca sonda commit) hata anında bekleyen kısmi
+        değişiklikleri geri almıyordu; açık kalan transaction ilgisiz bir
+        sonraki commit() ile sessizce kalıcılaşabiliyordu.
+        """
+        self.cursor.execute("BEGIN")
+        try:
+            yield self.cursor
+        except Exception:
+            self.conn.rollback()
+            raise
+        else:
+            self.conn.commit()
 
     def _migrate(self) -> None:
         """PRAGMA user_version tabanlı numaralı şema migrasyonu.
@@ -670,18 +688,20 @@ class Database:
         (UI kullanıcıya kaç satırın neden alınamadığını gösterebilsin diye)."""
         eklenen = 0
         atlanan = 0
+        # Tüm içe aktarım tek transaction: hata anında yarım aktarılmış
+        # satırlar geri alınır, kısmi değişiklik sonraki commit'e sızmaz.
         with open(path, "r", encoding="utf-8-sig") as dosya:
             reader = csv.DictReader(dosya)
-            for satir in reader:
-                try:
-                    n = self._satir_ekle_guvenli(satir)
-                    eklenen += n
-                    if n == 0:
+            with self._transaction():
+                for satir in reader:
+                    try:
+                        n = self._satir_ekle_guvenli(satir)
+                        eklenen += n
+                        if n == 0:
+                            atlanan += 1
+                    except (ValueError, KeyError):
                         atlanan += 1
-                except (ValueError, KeyError):
-                    atlanan += 1
-                    continue
-        self.conn.commit()
+                        continue
         self.son_ice_aktarim_atlanan = atlanan
         return eklenen
 
@@ -714,28 +734,29 @@ class Database:
 
             eklenen = 0
             atlanan = 0
-            for row in satirlar:
-                if row is None or all(v is None for v in row):
-                    continue
-                try:
-                    satir = {
-                        "tarih": row[indeksler["tarih"]] if "tarih" in indeksler else "",
-                        "tur": row[indeksler["tur"]] if "tur" in indeksler else "",
-                        "kategori": row[indeksler["kategori"]] if "kategori" in indeksler else "",
-                        "aciklama": row[indeksler["aciklama"]] if "aciklama" in indeksler else "",
-                        "tutar": row[indeksler["tutar"]] if "tutar" in indeksler else 0,
-                        "etiketler": row[indeksler["etiketler"]] if "etiketler" in indeksler else "",
-                    }
-                    n = self._satir_ekle_guvenli(
-                        {k: ("" if v is None else str(v)) for k, v in satir.items()}
-                    )
-                    eklenen += n
-                    if n == 0:
+            # Tek transaction (bkz. import_csv)
+            with self._transaction():
+                for row in satirlar:
+                    if row is None or all(v is None for v in row):
+                        continue
+                    try:
+                        satir = {
+                            "tarih": row[indeksler["tarih"]] if "tarih" in indeksler else "",
+                            "tur": row[indeksler["tur"]] if "tur" in indeksler else "",
+                            "kategori": row[indeksler["kategori"]] if "kategori" in indeksler else "",
+                            "aciklama": row[indeksler["aciklama"]] if "aciklama" in indeksler else "",
+                            "tutar": row[indeksler["tutar"]] if "tutar" in indeksler else 0,
+                            "etiketler": row[indeksler["etiketler"]] if "etiketler" in indeksler else "",
+                        }
+                        n = self._satir_ekle_guvenli(
+                            {k: ("" if v is None else str(v)) for k, v in satir.items()}
+                        )
+                        eklenen += n
+                        if n == 0:
+                            atlanan += 1
+                    except (ValueError, KeyError):
                         atlanan += 1
-                except (ValueError, KeyError):
-                    atlanan += 1
-                    continue
-            self.conn.commit()
+                        continue
             self.son_ice_aktarim_atlanan = atlanan
             return eklenen
         finally:
@@ -1111,23 +1132,24 @@ class Database:
         aktarilan = 0
         atlanan = 0
         bugun = datetime.now().strftime("%Y-%m-%d %H:%M")
-        for pid, kategori, tur, aciklama, tutar, aktarim in satirlar:
-            if aktarim:
-                atlanan += 1
-                continue
-            islem_tur = "Gelir" if tur == "Gelir" else "Gider"
-            self.cursor.execute(
-                "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
-                "etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
-                (tarih_iso, islem_tur, kategori, aciklama or "",
-                 para_yuvarla(tutar), "plan", uid),
-            )
-            self.cursor.execute(
-                "UPDATE planlanan SET aktarim_tarihi=? WHERE id=? AND kullanici_id=?",
-                (bugun, pid, uid),
-            )
-            aktarilan += 1
-        self.conn.commit()
+        with self._transaction():
+            for pid, kategori, tur, aciklama, tutar, aktarim in satirlar:
+                if aktarim:
+                    atlanan += 1
+                    continue
+                islem_tur = "Gelir" if tur == "Gelir" else "Gider"
+                self.cursor.execute(
+                    "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
+                    "etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
+                    (tarih_iso, islem_tur, kategori, aciklama or "",
+                     para_yuvarla(tutar), "plan", uid),
+                )
+                self.cursor.execute(
+                    "UPDATE planlanan SET aktarim_tarihi=? "
+                    "WHERE id=? AND kullanici_id=?",
+                    (bugun, pid, uid),
+                )
+                aktarilan += 1
         return {"aktarilan": aktarilan, "atlanan": atlanan}
 
     def planlanan_ozet(self, ay: int, yil: int) -> Dict[str, float]:
@@ -1204,21 +1226,26 @@ class Database:
             if row is None:
                 raise ValueError("Borç kaydı bulunamadı")
             tur, aciklama, kalan = row[0], row[1], float(row[2])
-            yeni_kalan = para_yuvarla(max(0.0, kalan - odeme))
+            # Kalanı aşan ödeme kırpılır. Önceden yalnızca yeni_kalan
+            # max(0,...) ile kırpılıyor, ödemenin kendisi tam haliyle hem
+            # islemler'e hem geçmişe yazılıyordu: kalan 100 TL iken 5000
+            # girilince bakiye 4900 TL fazla düşüyordu.
+            fiili_odeme = para_yuvarla(min(odeme, kalan)) if odeme > 0 else odeme
+            yeni_kalan = para_yuvarla(max(0.0, kalan - fiili_odeme))
             yeni_durum = "Ödendi" if yeni_kalan <= 0 else "Aktif"
 
-            if islem_olustur:
+            if islem_olustur and fiili_odeme != 0:
                 islem_tur = "Gider" if tur == "Borç" else "Gelir"
                 self.cursor.execute(
                     "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
                     "tutar, etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
                     (tarih_iso, islem_tur, "Borç/Alacak",
-                     f"{tur} ödemesi: {aciklama}", odeme, "borc-odeme", uid),
+                     f"{tur} ödemesi: {aciklama}", fiili_odeme, "borc-odeme", uid),
                 )
             self.cursor.execute(
                 "INSERT INTO borc_odemeler (borc_id, tarih, tutar) "
                 "VALUES (?,?,?)",
-                (borc_id, tarih_iso, odeme),
+                (borc_id, tarih_iso, fiili_odeme),
             )
             self.cursor.execute(
                 "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=? AND kullanici_id=?",
@@ -1249,11 +1276,19 @@ class Database:
         ]
 
     def borc_sil(self, id: int) -> None:
-        self.cursor.execute(
-            "DELETE FROM borclar WHERE id=? AND kullanici_id=?",
-            (id, self.aktif_kullanici_id),
-        )
-        self.conn.commit()
+        # Ödeme geçmişi de silinir: yalnızca borclar satırı silindiğinde
+        # borc_odemeler'de yetim kayıtlar kalıyor, yeniden kullanılan bir id
+        # bu satırları yanlış borca eşleyebiliyordu.
+        with self._transaction():
+            self.cursor.execute(
+                "DELETE FROM borc_odemeler WHERE borc_id IN "
+                "(SELECT id FROM borclar WHERE id=? AND kullanici_id=?)",
+                (id, self.aktif_kullanici_id),
+            )
+            self.cursor.execute(
+                "DELETE FROM borclar WHERE id=? AND kullanici_id=?",
+                (id, self.aktif_kullanici_id),
+            )
 
     def borclari_listele(self, durum: str = "Aktif") -> List[Dict[str, Any]]:
         uid = self.aktif_kullanici_id
@@ -1389,6 +1424,14 @@ class Database:
         self.conn.commit()
 
     def kullanici_profil_guncelle(self, kullanici_id: int, ad_soyad: str) -> None:
+        """Profil adını günceller. Yetki: kendi profili ya da admin.
+
+        Kontrol yoktu: herhangi bir kullanıcı, id vererek başkasının ad-soyad
+        bilgisini değiştirebiliyordu (kullanici_sifre_degistir ve
+        kullanici_sil zaten denetliyordu, bu metot asimetrik kalmıştı).
+        """
+        if kullanici_id != self.aktif_kullanici_id and not self.aktif_admin_mi():
+            raise YetkiHatasi("Bu işlem için yetkiniz yok.")
         self.cursor.execute(
             "UPDATE kullanicilar SET ad_soyad=? WHERE id=?",
             (ad_soyad, kullanici_id),
@@ -1436,13 +1479,24 @@ class Database:
             raise YetkiHatasi("Kullanıcı silmek için admin yetkisi gerekir.")
         if kullanici_id == 1:
             return False
-        # Silinen kullanıcının finansal verisini de temizle (yetim veri kalmasın)
-        for tablo in _KULLANICI_TABLOLARI:
+        # Silinen kullanıcının finansal verisini de temizle (yetim veri kalmasın).
+        # Çok tablolu silme atomik olmalı: yarıda kesilirse kullanıcı silinmiş
+        # ama verisi kalmış (ya da tersi) bir ara duruma düşülüyordu.
+        with self._transaction():
+            # borc_odemeler'de kullanici_id yok; borclar üzerinden temizlenir.
+            # Aksi halde borçlar silinince ödeme satırları yetim kalıyordu.
             self.cursor.execute(
-                f"DELETE FROM {tablo} WHERE kullanici_id=?", (kullanici_id,)
+                "DELETE FROM borc_odemeler WHERE borc_id IN "
+                "(SELECT id FROM borclar WHERE kullanici_id=?)",
+                (kullanici_id,),
             )
-        self.cursor.execute("DELETE FROM kullanicilar WHERE id=?", (kullanici_id,))
-        self.conn.commit()
+            for tablo in _KULLANICI_TABLOLARI:
+                self.cursor.execute(
+                    f"DELETE FROM {tablo} WHERE kullanici_id=?", (kullanici_id,)
+                )
+            self.cursor.execute(
+                "DELETE FROM kullanicilar WHERE id=?", (kullanici_id,)
+            )
         return True
 
     # ==========================
@@ -1532,26 +1586,30 @@ class Database:
             (uid,),
         )
         kurallar = self.cursor.fetchall()
-        for kid, tur, kategori, aciklama, tutar, gun, son_donem in kurallar:
-            # İşlenecek dönemleri hesapla: son dönemden sonrası, günü gelmiş olanlar
-            for yil, ay in self._islenecek_donemler(son_donem, bugun, gun):
-                gecerli_gun = min(gun, self._ayin_son_gunu(yil, ay))
-                tarih_iso = f"{yil:04d}-{ay:02d}-{gecerli_gun:02d}"
-                self.cursor.execute(
-                    "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
-                    "etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
-                    (tarih_iso, tur, kategori, aciklama or "",
-                     para_yuvarla(tutar), "tekrarlayan", uid),
-                )
-                self.cursor.execute(
-                    "UPDATE tekrarlayan SET son_islenen_donem=? WHERE id=?",
-                    (f"{yil:04d}-{ay:02d}", kid),
-                )
-                eklenenler.append(
-                    {"tur": tur, "kategori": kategori, "tutar": para_yuvarla(tutar)}
-                )
-        if eklenenler:
-            self.conn.commit()
+        # INSERT + son_islenen_donem UPDATE çifti atomik olmalı: yarıda
+        # kesilirse işlem eklenmiş ama dönem işaretlenmemiş olur ve aynı
+        # kayıt bir sonraki çalıştırmada tekrar eklenir (mükerrer para).
+        with self._transaction():
+            for kid, tur, kategori, aciklama, tutar, gun, son_donem in kurallar:
+                # Son dönemden sonrası, günü gelmiş dönemler
+                for yil, ay in self._islenecek_donemler(son_donem, bugun, gun):
+                    gecerli_gun = min(gun, self._ayin_son_gunu(yil, ay))
+                    tarih_iso = f"{yil:04d}-{ay:02d}-{gecerli_gun:02d}"
+                    self.cursor.execute(
+                        "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
+                        "tutar, etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
+                        (tarih_iso, tur, kategori, aciklama or "",
+                         para_yuvarla(tutar), "tekrarlayan", uid),
+                    )
+                    self.cursor.execute(
+                        "UPDATE tekrarlayan SET son_islenen_donem=? "
+                        "WHERE id=? AND kullanici_id=?",
+                        (f"{yil:04d}-{ay:02d}", kid, uid),
+                    )
+                    eklenenler.append(
+                        {"tur": tur, "kategori": kategori,
+                         "tutar": para_yuvarla(tutar)}
+                    )
         return eklenenler
 
     @staticmethod

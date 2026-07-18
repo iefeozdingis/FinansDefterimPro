@@ -179,6 +179,66 @@ class DatabaseTests(unittest.TestCase):
         self.db.oturum_ac(1)
         self.assertEqual(self.db.borc_odemeleri(borc_id), [])
 
+    def test_borc_fazla_odeme_kirpilir(self):
+        """Kalanı aşan ödeme hem işleme hem geçmişe kırpılmış yazılmalı."""
+        borc_id = self.db.borc_ekle(
+            "Borç", "Kredi", "Banka", 1000, 100, "01.07.2026", "01.12.2026"
+        )
+        # Kalan 100 TL iken 5000 girilirse yalnızca 100 işlenmeli
+        self.db.borc_odeme_yap(borc_id, 5000, "15.07.2026")
+
+        odemeler = self.db.borc_odemeleri(borc_id)
+        self.assertEqual(len(odemeler), 1)
+        self.assertEqual(odemeler[0]["tutar"], 100.0)
+        # Bakiyeye de yalnızca 100 TL gider yansımalı (4900 TL fazla düşmemeli)
+        self.assertEqual(self.db.toplam_gider(), 100.0)
+        borc = self.db.borclari_listele("Tümü")[0]
+        self.assertEqual(borc["kalan_tutar"], 0.0)
+        self.assertEqual(borc["durum"], "Ödendi")
+
+    def test_borc_sil_odemeleri_de_siler(self):
+        """Borç silinince ödeme geçmişi yetim kalmamalı."""
+        borc_id = self.db.borc_ekle(
+            "Borç", "Kredi", "Banka", 1000, 1000, "01.07.2026", "01.12.2026"
+        )
+        self.db.borc_odeme_yap(borc_id, 250, "15.07.2026")
+        self.db.borc_sil(borc_id)
+
+        self.db.cursor.execute(
+            "SELECT COUNT(*) FROM borc_odemeler WHERE borc_id=?", (borc_id,)
+        )
+        self.assertEqual(self.db.cursor.fetchone()[0], 0)
+
+    def test_profil_guncelleme_yetkisi(self):
+        """Normal kullanıcı başkasının profilini değiştirememeli."""
+        import database as dbm
+        self.db.kullanici_kaydet("admin", "admin123", "Admin")
+        self.db.kullanici_kaydet("ayse", "ayse1234", "Ayşe")
+
+        self.db.oturum_ac(2)
+        with self.assertRaises(dbm.YetkiHatasi):
+            self.db.kullanici_profil_guncelle(1, "Ele geçirildi")
+        self.assertEqual(self.db.kullanici_ad_oku(1), "Admin")
+        # Kendi profilini değiştirebilmeli
+        self.db.kullanici_profil_guncelle(2, "Ayşe Yılmaz")
+        self.assertEqual(self.db.kullanici_ad_oku(2), "Ayşe Yılmaz")
+
+    def test_transaction_rollback(self):
+        """Çok adımlı yazma yarıda kesilirse kısmi değişiklik kalmamalı."""
+        self.db.gelir_ekle("01.07.2026", "Maaş", "Başlangıç", 1000)
+        onceki = len(self.db.tum_islemler())
+
+        with self.assertRaises(RuntimeError):
+            with self.db._transaction():
+                self.db.cursor.execute(
+                    "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
+                    "tutar, kullanici_id) VALUES (?,?,?,?,?,?)",
+                    ("2026-07-02", "Gider", "Test", "Yarım kalan", 50, 1),
+                )
+                raise RuntimeError("simüle edilmiş hata")
+
+        self.assertEqual(len(self.db.tum_islemler()), onceki)
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)

@@ -424,12 +424,15 @@ class ProfilDuzenlePenceresi(ctk.CTkToplevel):
             messagebox.showerror("Hata", "Ad soyad boş olamaz.")
             return
 
-        kullanici_id_str = self.db.ayar_oku("aktif_kullanici_id", "0")
-        if not kullanici_id_str or kullanici_id_str == "0":
+        # Kimlik, paylaşılan 'ayarlar' tablosu yerine bellekteki oturumdan
+        # okunur: ayarlar tablosu kullanıcıdan bağımsız (global) olduğu için
+        # değeri bayat kalabiliyor ve yanlış profili güncelleyebiliyordu.
+        kullanici_id = self.db.aktif_kullanici_id
+        if not kullanici_id:
             messagebox.showerror("Hata", "Kullanıcı bilgisi bulunamadı.")
             self.destroy()
             return
 
-        self.db.kullanici_profil_guncelle(int(kullanici_id_str), yeni_ad)
+        self.db.kullanici_profil_guncelle(kullanici_id, yeni_ad)
         messagebox.showinfo("Başarılı", f"Profil güncellendi: {yeni_ad}")
         self.destroy()

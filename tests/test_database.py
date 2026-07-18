@@ -388,6 +388,61 @@ class DatabaseTests(unittest.TestCase):
         # dun değişkeni hafta sınırında kullanılır
         self.assertLessEqual(dun, bugun)
 
+    def test_zayif_hash_asla_uretilmez(self):
+        """bcrypt yoksa sessizce tuzsuz SHA-256 üretilmemeli, hata verilmeli."""
+        import database as dbm
+        orijinal = dbm._HAS_BCRYPT
+        dbm._HAS_BCRYPT = False
+        try:
+            with self.assertRaises(RuntimeError):
+                dbm._sifre_hashla("herhangibirsifre")
+        finally:
+            dbm._HAS_BCRYPT = orijinal
+
+    def test_uretilen_hash_bcrypt_ve_tuzlu(self):
+        """Yeni hash'ler bcrypt olmalı ve aynı şifre farklı hash vermeli."""
+        import database as dbm
+        h1 = dbm._sifre_hashla("aynisifre123")
+        h2 = dbm._sifre_hashla("aynisifre123")
+        self.assertTrue(h1.startswith("$2"))
+        self.assertNotEqual(h1, h2, "Tuz yok: aynı şifre aynı hash veriyor")
+        self.assertTrue(dbm._sifre_dogrula("aynisifre123", h1))
+        self.assertFalse(dbm._sifre_dogrula("yanlissifre", h1))
+
+    def test_eski_sha256_hash_girise_izin_verip_yukseltir(self):
+        """Mevcut kullanıcılar kilitlenmemeli; hash bcrypt'e yükselmeli."""
+        import hashlib
+        import database as dbm
+        self.db.kullanici_kaydet("eski", "eskisifre123", "Eski")
+        # Kullanıcıyı bilerek eski (bcrypt öncesi) hash'e geri çevir
+        legacy = hashlib.sha256(b"Fineding2024!" + b"eskisifre123").hexdigest()
+        self.db.cursor.execute(
+            "UPDATE kullanicilar SET sifre_hash=? WHERE kullanici_adi=?",
+            (legacy, "eski"),
+        )
+        self.db.conn.commit()
+
+        self.assertIsNotNone(self.db.kullanici_dogrula("eski", "eskisifre123"))
+        self.db.cursor.execute(
+            "SELECT sifre_hash FROM kullanicilar WHERE kullanici_adi=?", ("eski",)
+        )
+        yeni_hash = self.db.cursor.fetchone()[0]
+        self.assertTrue(
+            yeni_hash.startswith("$2"), "Eski hash bcrypt'e yükseltilmedi"
+        )
+        self.assertNotEqual(yeni_hash, legacy)
+        self.assertTrue(dbm._HAS_BCRYPT)
+
+    def test_hmac_anahtari_sabit_degere_dusmez(self):
+        """Anahtar yazılamıyorsa gömülü sabite düşmemeli, hata vermeli."""
+        import database as dbm
+        from unittest import mock
+        with mock.patch.object(
+            dbm.Path, "write_bytes", side_effect=OSError("salt-okunur")
+        ), mock.patch.object(dbm.Path, "exists", return_value=False):
+            with self.assertRaises(dbm.HmacAnahtarHatasi):
+                dbm._hmac_anahtari()
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)

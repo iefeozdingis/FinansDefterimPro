@@ -29,6 +29,10 @@ DB_FOLDER.mkdir(exist_ok=True)
 DB_PATH = DB_FOLDER / "finans.db"
 
 
+class HmacAnahtarHatasi(Exception):
+    """Yedek imzalama anahtarı okunamadığında/oluşturulamadığında fırlatılır."""
+
+
 def _hmac_anahtari() -> bytes:
     """Kuruluma özel HMAC anahtarını okur; yoksa rastgele üretip saklar.
 
@@ -44,10 +48,15 @@ def _hmac_anahtari() -> bytes:
         anahtar = secrets.token_bytes(32)
         key_path.write_bytes(anahtar)
         return anahtar
-    except OSError:
-        # Anahtar dosyası yazılamıyorsa sabit bir değere düş (yine de
-        # bozulma tespiti sağlar, tamper koruması zayıflar)
-        return b"fineding-fallback-key"
+    except OSError as e:
+        # Sabit gömülü anahtara DÜŞÜLMEZ: kaynak kodda herkese açık bir
+        # anahtarla imzalamak, yedeği değiştiren birinin geçerli bir .hmac
+        # üretip bütünlük kontrolünü geçmesini sağlıyordu — yani kurcalama
+        # tespitini tamamen etkisiz kılıyordu. Anahtar üretilemiyorsa
+        # imzalama/doğrulama yapılmaz.
+        raise HmacAnahtarHatasi(
+            f"Yedek imzalama anahtarı okunamadı/oluşturulamadı: {e}"
+        ) from e
 
 
 # Güvenli şifre hash'leme
@@ -60,10 +69,20 @@ except ImportError:
 
 
 def _sifre_hashla(sifre: str) -> str:
-    """bcrypt ile şifre hash'ler, yoksa SHA-256'ya düşer."""
-    if _HAS_BCRYPT:
-        return bcrypt.hashpw(sifre.encode(), bcrypt.gensalt()).decode()
-    return hashlib.sha256(b"Fineding2024!" + sifre.encode()).hexdigest()
+    """Şifreyi bcrypt ile hash'ler.
+
+    bcrypt yoksa ARTIK SESSİZCE ZAYIF HASH ÜRETİLMEZ. Eski yedek yol
+    tuzsuz SHA-256 + kaynak koda gömülü sabit "pepper" kullanıyordu: aynı
+    şifre her kullanıcıda aynı hash'i veriyor, DB'yi okuyan biri gökkuşağı
+    tablosu/GPU ile saniyeler içinde kırabiliyordu. bcrypt zorunlu bir
+    bağımlılık (requirements.txt), yokluğu bir kurulum hatasıdır.
+    """
+    if not _HAS_BCRYPT:
+        raise RuntimeError(
+            "bcrypt kurulu değil; güvenli şifre saklanamıyor. "
+            "Kurulum için: pip install -r requirements.txt"
+        )
+    return bcrypt.hashpw(sifre.encode(), bcrypt.gensalt()).decode()
 
 
 def _sifre_dogrula(sifre: str, hash_deger: str) -> bool:
@@ -72,10 +91,12 @@ def _sifre_dogrula(sifre: str, hash_deger: str) -> bool:
         if _HAS_BCRYPT:
             return bcrypt.checkpw(sifre.encode(), hash_deger.encode())
         return False
-    # Eski (bcrypt öncesi) SHA-256 hash — _sifre_hashla burada kullanılamaz,
-    # bcrypt mevcutken her zaman yeni bir bcrypt hash üretir ve asla eşleşmez.
+    # Eski (bcrypt öncesi) SHA-256 hash'ler YALNIZCA DOĞRULAMA için hâlâ
+    # destekleniyor: mevcut kullanıcılar giriş yapabilsin ve hash'leri
+    # kullanici_dogrula içindeki upgrade-on-login ile bcrypt'e yükselsin.
+    # Yeni hash üretimi için bu yol artık KULLANILMIYOR (_sifre_hashla).
     legacy_hash = hashlib.sha256(b"Fineding2024!" + sifre.encode()).hexdigest()
-    return legacy_hash == hash_deger
+    return hmac.compare_digest(legacy_hash, hash_deger)
 
 
 def csv_guvenli(deger: Any) -> Any:
@@ -1014,6 +1035,18 @@ class Database:
         self.cursor = self.conn.cursor()
         # Geri yüklenen DB'nin id'leri farklı; eski geri-al geçmişi geçersiz
         self._silinen_yigin = []
+
+        # Başarılı geri yüklemeden sonra güvenlik kopyasını SİL. Kopya tüm
+        # finans geçmişini ve parola hash'lerini şifresiz, imzasız biçimde
+        # süresiz bırakıyordu ve hiç temizlenmiyordu.
+        guvenlik_kopyasi = Path(str(DB_PATH) + ".restore-bak")
+        if guvenlik_kopyasi.exists():
+            try:
+                guvenlik_kopyasi.unlink()
+            except OSError:
+                logging.getLogger(__name__).warning(
+                    "Geri yükleme güvenlik kopyası silinemedi: %s", guvenlik_kopyasi
+                )
 
     def ayar_oku(self, anahtar: str, varsayilan: Optional[str] = None) -> Optional[str]:
         self.cursor.execute("SELECT deger FROM ayarlar WHERE anahtar=?", (anahtar,))

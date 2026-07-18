@@ -78,6 +78,30 @@ def treeview_tema_uygula():
     )
 
 
+def tarih_bicimle(rakamlar: str) -> str:
+    """Yalnızca rakamlardan oluşan metni GG.AA.YYYY biçimine sokar.
+
+    SAF fonksiyon — widget'a bağlı değil, headless test edilebilir. Mantık
+    önceden tamamen tarih_formatla(event) içinde, event.widget'a kilitliydi;
+    bu yüzden testler gerçek bir tk.Entry kurmak zorundaydı (yavaş, DISPLAY
+    bağımlı) ve sınır durumları kapsanmıyordu.
+
+    >>> tarih_bicimle("01")
+    '01'
+    >>> tarih_bicimle("0107")
+    '01.07'
+    >>> tarih_bicimle("01072026")
+    '01.07.2026'
+    """
+    rakamlar = "".join(c for c in rakamlar if c.isdigit())
+    if len(rakamlar) <= 2:
+        return rakamlar
+    if len(rakamlar) <= 4:
+        return f"{rakamlar[:2]}.{rakamlar[2:]}"
+    # 8 haneden fazlası yok sayılır (GGAAYYYY)
+    return f"{rakamlar[:2]}.{rakamlar[2:4]}.{rakamlar[4:8]}"
+
+
 def tarih_formatla(event=None):
     """CTkEntry içinde GG.AA.YYYY formatını otomatik uygular."""
     widget = event.widget
@@ -104,12 +128,7 @@ def tarih_formatla(event=None):
             widget.delete(0, "end")
         return
 
-    if len(metin) <= 2:
-        yeni = metin
-    elif len(metin) <= 4:
-        yeni = f"{metin[:2]}.{metin[2:]}"
-    else:
-        yeni = f"{metin[:2]}.{metin[2:4]}.{metin[4:8]}"
+    yeni = tarih_bicimle(metin)
 
     widget.delete(0, "end")
     widget.insert(0, yeni)

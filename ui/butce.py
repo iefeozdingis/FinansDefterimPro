@@ -4,6 +4,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from ui import tema
+from ui.money import butce_durum_etiketi
 from ui.utils import para_formatla, tutar_bind, tutar_oku
 
 
@@ -153,8 +154,8 @@ class ButceSayfasi(ctk.CTkFrame):
             return
 
         for b in durumlar:
-            oran = min(b["harcanan"] / b["butce"] * 100, 100) if b["butce"] > 0 else 0
-            renk = "#ef4444" if oran > 90 else "#f59e0b" if oran > 70 else "#22c55e"
+            # Eşik/durum kararı saf fonksiyonda (ui.money) — testli
+            oran, durum, renk = butce_durum_etiketi(b["harcanan"], b["butce"])
 
             satir = ctk.CTkFrame(self.liste, fg_color="transparent")
             satir.pack(fill="x", padx=12, pady=6)
@@ -164,9 +165,6 @@ class ButceSayfasi(ctk.CTkFrame):
             ctk.CTkLabel(
                 ust, text=b["kategori"], font=("Segoe UI", 13, "bold"),
             ).pack(side="left")
-            durum = "🔴 Aşıldı" if b["kalan"] < 0 else (
-                "🟡 Yaklaşıyor" if b["kalan"] < b["butce"] * 0.1 else "✅"
-            )
             ctk.CTkLabel(
                 ust, text=f"{durum}  %{int(oran)}",
                 font=("Segoe UI", 12), text_color=renk,

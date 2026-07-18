@@ -5,7 +5,7 @@
 **Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-61%2F61%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-82%2F82%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
@@ -60,7 +60,7 @@ FINEding, tüm gelir-gider takibini **tek bir şık arayüzde**, **ücretsiz** v
 ### 🔐 Çok Kullanıcılı Sistem
 - Her kullanıcı kendi hesabıyla giriş yapar
 - **Admin paneli**: Kullanıcı yönetimi, şifre sıfırlama, kullanıcı silme
-- Şifreler SHA-256 + salt ile hash'lenir
+- Şifreler bcrypt ile hash'lenir (her kullanıcı için ayrı tuz)
 - "Beni Hatırla" özelliği
 
 ### 🎨 Arayüz
@@ -75,7 +75,7 @@ FINEding, tüm gelir-gider takibini **tek bir şık arayüzde**, **ücretsiz** v
 - **⬇️ Sistem tepsisi**: Kapatınca arka planda çalışır
 - **💾 Otomatik yedekleme**: Uygulama kapanırken `backups/` altına yedekler (son 10 tutulur)
 - **🗂 Manuel yedekleme**: İstediğin zaman yedek al, geri yükle
-- SHA-256 checksum ile yedek bütünlük kontrolü
+- HMAC-SHA256 imzası ile yedek bütünlük/kurcalama kontrolü
 
 ---
 
@@ -127,7 +127,7 @@ olur. Şifreler bcrypt ile hash'lenir ve en az 8 karakter olmalıdır.
 | `Ctrl+B` | Bütçe |
 | `Ctrl+P` | Planlama |
 | `Ctrl+,` | Ayarlar |
-| `Ctrl+Q` | Çıkış |
+| `Ctrl+Q` | Kapat (tepsi açıksa arka plana küçültür) |
 
 ---
 
@@ -157,7 +157,7 @@ python -m unittest discover -s tests -v
 ✅ test_yedekle_wal_checkpoint
 ✅ test_yillik_karsilastirma
 ─────────────────────────
-18 tests — ALL OK
+82 tests — ALL OK
 ```
 
 ---
@@ -217,7 +217,7 @@ FINEding/
 - **Admin şifre sıfırlama diyalogunda yeni şifre açık metin görünüyordu:** maskelendi.
 - Kullanılmayan `ui/raporlar.py` (ölü kod) kaldırıldı.
 - Planlama → Tekrarlayan sekmesi açılmıyordu, Bütçe sayfası tema hatası veriyordu, Bakiye widget'ı hiç görünmüyordu — hepsi çözüldü.
-- Tüm sayfalar hatasız açılıyor; 20/20 test yeşil.
+- Tüm sayfalar hatasız açılıyor; tüm testler yeşil.
 
 ## 📝 Geliştirici Notları
 

@@ -2,7 +2,8 @@
 
 import unittest
 
-from ui.money import para_formatla, para_parse
+from ui.money import butce_durum_etiketi, para_formatla, para_parse
+from ui.utils import tarih_bicimle
 
 
 class TestParaParse(unittest.TestCase):
@@ -66,6 +67,67 @@ class TestParaFormatla(unittest.TestCase):
             self.assertAlmostEqual(
                 para_parse(para_formatla(deger, sembol=False)), deger, places=2
             )
+
+
+class TestButceDurumEtiketi(unittest.TestCase):
+    """Bütçe eşikleri artık render'a gömülü değil, saf fonksiyonda."""
+
+    def test_normal_kullanim_yesil(self):
+        oran, durum, renk = butce_durum_etiketi(harcanan=300, butce=1000)
+        self.assertEqual(oran, 30.0)
+        self.assertEqual(durum, "✅")
+        self.assertEqual(renk, "#22c55e")
+
+    def test_yetmis_ustu_sari(self):
+        _, _, renk = butce_durum_etiketi(harcanan=750, butce=1000)
+        self.assertEqual(renk, "#f59e0b")
+
+    def test_doksan_ustu_kirmizi(self):
+        _, _, renk = butce_durum_etiketi(harcanan=950, butce=1000)
+        self.assertEqual(renk, "#ef4444")
+
+    def test_kalan_yuzde_ondan_az_yaklasiyor(self):
+        # kalan 50 < butce*0.1 (100) → "Yaklaşıyor"
+        _, durum, _ = butce_durum_etiketi(harcanan=950, butce=1000)
+        self.assertEqual(durum, "🟡 Yaklaşıyor")
+
+    def test_asilan_butce(self):
+        oran, durum, _ = butce_durum_etiketi(harcanan=1200, butce=1000)
+        self.assertEqual(durum, "🔴 Aşıldı")
+        self.assertEqual(oran, 100.0, "Oran %100'de kırpılmalı")
+
+    def test_sifir_butce_bolme_hatasi_vermez(self):
+        oran, _, _ = butce_durum_etiketi(harcanan=500, butce=0)
+        self.assertEqual(oran, 0.0)
+
+
+class TestTarihBicimle(unittest.TestCase):
+    """Tarih biçimlendirme mantığı artık Tk gerektirmiyor."""
+
+    def test_gun(self):
+        self.assertEqual(tarih_bicimle("0"), "0")
+        self.assertEqual(tarih_bicimle("01"), "01")
+
+    def test_gun_ay(self):
+        self.assertEqual(tarih_bicimle("017"), "01.7")
+        self.assertEqual(tarih_bicimle("0107"), "01.07")
+
+    def test_tam_tarih(self):
+        self.assertEqual(tarih_bicimle("01072026"), "01.07.2026")
+
+    def test_kismi_yil(self):
+        self.assertEqual(tarih_bicimle("010720"), "01.07.20")
+
+    def test_fazla_hane_yok_sayilir(self):
+        self.assertEqual(tarih_bicimle("010720269999"), "01.07.2026")
+
+    def test_rakam_disi_karakterler_atilir(self):
+        self.assertEqual(tarih_bicimle("01.07.2026"), "01.07.2026")
+        self.assertEqual(tarih_bicimle("abc01x07y2026"), "01.07.2026")
+
+    def test_bos(self):
+        self.assertEqual(tarih_bicimle(""), "")
+        self.assertEqual(tarih_bicimle("..."), "")
 
 
 if __name__ == "__main__":

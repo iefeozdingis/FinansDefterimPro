@@ -58,6 +58,36 @@ def para_parse(metin: str) -> float:
     return -deger if negatif else deger
 
 
+def butce_durum_etiketi(harcanan: float, butce: float) -> tuple:
+    """Bütçe kullanım oranını, durum etiketini ve renk kodunu döner.
+
+    (oran_yuzde, durum_metni, renk) döner. Bu eşikler (>%90 kırmızı,
+    kalan < bütçenin %10'u -> "Yaklaşıyor") birer İŞ KURALI'dır; önceden
+    doğrudan render fonksiyonunun içine gömülüydü ve hiçbir test onları
+    korumuyordu — eşik yanlışlıkla değişse kimse fark etmezdi.
+    """
+    if butce > 0:
+        oran = min(harcanan / butce * 100, 100)
+    else:
+        oran = 0.0
+    kalan = butce - harcanan
+
+    if oran > 90:
+        renk = "#ef4444"
+    elif oran > 70:
+        renk = "#f59e0b"
+    else:
+        renk = "#22c55e"
+
+    if kalan < 0:
+        durum = "🔴 Aşıldı"
+    elif kalan < butce * 0.1:
+        durum = "🟡 Yaklaşıyor"
+    else:
+        durum = "✅"
+    return oran, durum, renk
+
+
 def para_formatla(deger: float, sembol: bool = True, ondalik: int = 2) -> str:
     """Tutarı Türk para formatında döner: 1.234,56 ₺ (negatif: -1.234,56 ₺)."""
     metin = f"{abs(deger):,.{ondalik}f}"

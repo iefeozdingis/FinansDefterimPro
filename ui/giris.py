@@ -7,6 +7,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from database import MIN_SIFRE_UZUNLUK
+from version import SURUM_ETIKETI
 
 
 class GirisEkrani(ctk.CTk):
@@ -162,7 +163,8 @@ class GirisEkrani(ctk.CTk):
 
         # Alt bilgi
         ctk.CTkLabel(
-            self, text="v1.6.0 — Fineding", font=("Segoe UI", 10), text_color="#475569"
+            self, text=f"{SURUM_ETIKETI} — Fineding", font=("Segoe UI", 10),
+            text_color="#475569",
         ).pack(pady=(15, 0))
 
     def _giris_yap(self):

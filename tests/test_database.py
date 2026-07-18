@@ -333,6 +333,38 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(eski_db.toplam_gelir(), 45000.0)
         self.assertEqual(eski_db.toplam_gider(), 1250.50)
 
+    def test_toplu_sil_tek_geri_al_ile_donuyor(self):
+        """Toplu silme tek geri-al biriminde tamamen geri gelmeli."""
+        for i in range(5):
+            self.db.gider_ekle(f"0{i+1}.07.2026", "Market", f"Alışveriş {i}", 100)
+        idler = [s[0] for s in self.db.tum_islemler()]
+        self.assertEqual(len(idler), 5)
+
+        silinen = self.db.sil_toplu(idler)
+        self.assertEqual(silinen, 5)
+        self.assertEqual(len(self.db.tum_islemler()), 0)
+
+        # Tek "Geri Al" 5'ini birden getirmeli (eskiden yalnızca 1 dönüyordu)
+        self.assertEqual(self.db.geri_al(), 5)
+        self.assertEqual(len(self.db.tum_islemler()), 5)
+        self.assertEqual(self.db.toplam_gider(), 500.0)
+
+    def test_geri_al_yigini_sirayla_calisir(self):
+        """Art arda silmelerde her geri-al bir öncekini getirmeli."""
+        self.db.gider_ekle("01.07.2026", "Market", "Birinci", 100)
+        self.db.gider_ekle("02.07.2026", "Market", "İkinci", 200)
+        birinci, ikinci = [s[0] for s in self.db.tum_islemler()][::-1]
+
+        self.db.sil(birinci)
+        self.db.sil(ikinci)
+        self.assertEqual(len(self.db.tum_islemler()), 0)
+
+        # İki ayrı geri-al iki kaydı da getirmeli (tek slot değil, yığın)
+        self.assertEqual(self.db.geri_al(), 1)
+        self.assertEqual(self.db.geri_al(), 1)
+        self.assertEqual(len(self.db.tum_islemler()), 2)
+        self.assertEqual(self.db.geri_al(), 0)
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)

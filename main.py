@@ -379,9 +379,12 @@ class FinedingApp(ctk.CTk):
                     f"({e['tur']})",
                 )
             if eklenenler:
-                # Açık dashboard'u tazele
+                # YALNIZCA dashboard açıkken tazele. Koşulsuz dashboard_ac()
+                # çağırmak, kullanıcı Gelir/Gider formunu doldururken sayfayı
+                # yok edip yazılan veriyi uyarısız siliyordu.
                 try:
-                    self.dashboard_ac()
+                    if self._dashboard_acik_mi():
+                        self.dashboard_ac()
                 except Exception:
                     pass
         except Exception:
@@ -412,13 +415,17 @@ class FinedingApp(ctk.CTk):
         # 30 dakikada bir tekrar
         self._kontrol_after_id = self.after(1800_000, self._periyodik_kontroller)
 
+    def _dashboard_acik_mi(self) -> bool:
+        """İçerik alanında şu an Dashboard mı gösteriliyor?"""
+        try:
+            return any(
+                isinstance(w, Dashboard) for w in self.content.winfo_children()
+            )
+        except Exception:
+            return False
+
     def _guvenli_gecis(self, sayfa_sinifi, **kwargs):
         """Sayfa değiştir - öncekini yok et, yenisini oluştur."""
-        # Önceki zamanlanmış geçişi iptal et
-        if hasattr(self, "_gecis_after_id") and self._gecis_after_id is not None:
-            self.after_cancel(self._gecis_after_id)
-            self._gecis_after_id = None
-
         # Mevcut sayfayı temizle
         try:
             for widget in list(self.content.winfo_children()):
@@ -441,9 +448,9 @@ class FinedingApp(ctk.CTk):
     # DASHBOARD
     # =====================================
 
-    def dashboard_ac(self):
+    def dashboard_ac(self, secili_islem=None):
         self._menu_aktif("Dashboard")
-        self._guvenli_gecis(Dashboard)
+        self._guvenli_gecis(Dashboard, secili_islem=secili_islem)
 
     # =====================================
     # GELİR SAYFASI

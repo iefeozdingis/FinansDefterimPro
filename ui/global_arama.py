@@ -92,7 +92,12 @@ class GlobalAramaPenceresi(ctk.CTkToplevel):
         tip, kayit_id = self._sonuclar[idx]
         self.destroy()
         if tip == "islem":
-            self._dashboard_ac()
+            # Kaydı seçili getir; borç sonuçlarındaki derin bağlantıyla simetrik
+            try:
+                self._dashboard_ac(secili_islem=kayit_id)
+            except TypeError:
+                # Geriye uyumluluk: eski imza (parametresiz)
+                self._dashboard_ac()
         else:
             # Borç/alacak: doğrudan Borçlar sekmesine ve ilgili kayda götür
             try:

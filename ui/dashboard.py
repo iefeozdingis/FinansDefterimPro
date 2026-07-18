@@ -131,13 +131,33 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
 
 
 class Dashboard(ctk.CTkFrame):
-    def __init__(self, parent, db):
+    def __init__(self, parent, db, secili_islem=None):
         super().__init__(parent)
 
         self.db = db
         self.grid_columnconfigure((0, 1), weight=1)
 
         self.yenile()
+
+        # Derin bağlantı: global aramadan gelindiyse ilgili satırı seç ve
+        # görünüre kaydır. Önceden yalnızca düz Dashboard açılıyordu ve
+        # kullanıcı aradığı kaydı yüzlerce satır içinde elle arıyordu
+        # (borç sonuçlarında bu davranış zaten vardı, işlemde yoktu).
+        if secili_islem is not None:
+            self.after(100, lambda: self._islem_sec(secili_islem))
+
+    def _islem_sec(self, islem_id):
+        """Verilen işlemi tabloda seçili hale getirir."""
+        try:
+            for item in self.tablo.get_children():
+                deger = self.tablo.item(item)["values"]
+                if deger and str(deger[0]) == str(islem_id):
+                    self.tablo.selection_set(item)
+                    self.tablo.focus(item)
+                    self.tablo.see(item)
+                    break
+        except Exception:
+            pass
 
     # ==========================
     # Kart Oluştur
@@ -784,7 +804,11 @@ class Dashboard(ctk.CTkFrame):
 
         veri = self.tablo.item(secili[0])["values"]
 
-        cevap = messagebox.askyesno("Sil", "Seçili işlem silinsin mi?")
+        cevap = messagebox.askyesno(
+            "Sil",
+            "Seçili işlem silinsin mi?\n\n"
+            "Yanlışlıkla sildiysen '↩ Geri Al' ile kurtarabilirsin.",
+        )
 
         if not cevap:
             return
@@ -794,8 +818,14 @@ class Dashboard(ctk.CTkFrame):
         self.yenile()
 
     def geri_al(self):
-        if self.db.geri_al():
-            messagebox.showinfo("Başarılı", "Son silinen işlem geri getirildi.")
+        adet = self.db.geri_al()
+        if adet:
+            mesaj = (
+                "Son silinen işlem geri getirildi."
+                if adet == 1
+                else f"Son silinen {adet} işlem geri getirildi."
+            )
+            messagebox.showinfo("Başarılı", mesaj)
             self.yenile()
         else:
             messagebox.showwarning("Uyarı", "Geri alınacak işlem bulunamadı.")
@@ -807,13 +837,18 @@ class Dashboard(ctk.CTkFrame):
                 "Uyarı", "Ctrl+tıklama ile birden fazla satır seçin."
             )
             return
-        if not messagebox.askyesno("Toplu Sil", f"{len(secili)} işlem silinsin mi?"):
+        if not messagebox.askyesno(
+            "Toplu Sil",
+            f"{len(secili)} işlem silinsin mi?\n\n"
+            "'↩ Geri Al' hepsini birden geri getirir.",
+        ):
             return
-        for s in secili:
-            veri = self.tablo.item(s)["values"]
-            self.db.sil(veri[0])
+        # Tek çağrı = tek transaction = tek geri-al birimi. Döngüde tek tek
+        # silmek yalnızca son kaydı geri alınabilir bırakıyordu.
+        idler = [self.tablo.item(s)["values"][0] for s in secili]
+        silinen = self.db.sil_toplu(idler)
         self.yenile()
-        messagebox.showinfo("Başarılı", f"{len(secili)} işlem silindi.")
+        messagebox.showinfo("Başarılı", f"{silinen} işlem silindi.")
 
     def _hizli_islem(self, tur):
         """Hızlı işlem ekleme penceresi açar."""

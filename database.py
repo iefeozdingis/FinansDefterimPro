@@ -125,6 +125,9 @@ def normalize_date(tarih_str: str) -> str:
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
 SCHEMA_VERSION = 3
 
+# Geri-al yığınında en fazla kaç silme partisi tutulur
+GERI_AL_YIGIN_SINIRI = 20
+
 # Minimum şifre uzunluğu (veri katmanında zorlanır)
 MIN_SIFRE_UZUNLUK = 8
 
@@ -148,7 +151,10 @@ class Database:
     def __init__(self, kullanici_id: int = 1) -> None:
         self.conn = self._baglan()
         self.cursor = self.conn.cursor()
-        self._son_silinen: Optional[Tuple[Any, ...]] = None
+        # Geri-al geçmişi: her eleman bir SİLME PARTİSİ (bir veya çok kayıt).
+        # Tek slot yerine yığın: toplu silmede yalnızca son kayıt geri
+        # alınabiliyor, kalanlar sessizce kalıcı kayboluyordu.
+        self._silinen_yigin: List[List[Any]] = []
         # Aktif oturum kullanıcısı — tüm finans sorguları bununla filtrelenir.
         # Varsayılan 1 (ilk/admin kullanıcı); giriş sonrası oturum_ac ile
         # gerçek kullanıcıya ayarlanır.
@@ -991,7 +997,8 @@ class Database:
         shutil.copy2(kaynak_yol, DB_PATH)
         self.conn = self._baglan()
         self.cursor = self.conn.cursor()
-        self._son_silinen = None
+        # Geri yüklenen DB'nin id'leri farklı; eski geri-al geçmişi geçersiz
+        self._silinen_yigin = []
 
     def ayar_oku(self, anahtar: str, varsayilan: Optional[str] = None) -> Optional[str]:
         self.cursor.execute("SELECT deger FROM ayarlar WHERE anahtar=?", (anahtar,))
@@ -1043,57 +1050,78 @@ class Database:
     # ==========================
 
     def sil(self, islem_id: int) -> None:
-        # Silmeden önce kaydı sakla (geri almak için) — sadece aktif
-        # kullanıcının işlemi silinebilir (başka kullanıcının verisine dokunmaz)
-        self.cursor.execute(
-            "SELECT * FROM islemler WHERE id=? AND kullanici_id=?",
-            (islem_id, self.aktif_kullanici_id),
-        )
-        self._son_silinen = self.cursor.fetchone()
-        if self._son_silinen is None:
-            return
-        self.cursor.execute(
-            "DELETE FROM islemler WHERE id=? AND kullanici_id=?",
-            (islem_id, self.aktif_kullanici_id),
-        )
-        self._log_islem("sil", islem_id, "İşlem silindi")
-        self.conn.commit()
+        """Tek işlem siler ve geri-al yığınına tek kalemlik parti olarak iter."""
+        self.sil_toplu([islem_id])
 
-    def geri_al(self) -> bool:
-        """Son silinen işlemi geri getirir. Başarılıysa True döner."""
-        if self._son_silinen is None:
-            return False
+    def sil_toplu(self, islem_idler: List[int]) -> int:
+        """Birden çok işlemi TEK transaction'da siler; TEK geri-al birimi olur.
+
+        Önceden UI döngüde sil() çağırıyordu ve _son_silinen tek slot olduğu
+        için 8 kayıt silinince yalnızca sonuncusu geri alınabiliyordu —
+        kalan 7'si mesaj tekil olduğundan fark edilmeden kalıcı kayboluyordu.
+        Silinen satır sayısını döner.
+        """
+        uid = self.aktif_kullanici_id
+        parti: List[Any] = []
+        with self._transaction():
+            for islem_id in islem_idler:
+                self.cursor.execute(
+                    "SELECT * FROM islemler WHERE id=? AND kullanici_id=?",
+                    (islem_id, uid),
+                )
+                row = self.cursor.fetchone()
+                if row is None:
+                    continue
+                parti.append(row)
+                self.cursor.execute(
+                    "DELETE FROM islemler WHERE id=? AND kullanici_id=?",
+                    (islem_id, uid),
+                )
+                self._log_islem("sil", islem_id, "İşlem silindi")
+        if parti:
+            self._silinen_yigin.append(parti)
+            # Yığını sınırla: geri-al geçmişi belleği süresiz büyütmemeli
+            del self._silinen_yigin[:-GERI_AL_YIGIN_SINIRI]
+        return len(parti)
+
+    def geri_al(self) -> int:
+        """Son silme partisini geri getirir; geri gelen kayıt sayısını döner.
+
+        Dönüş int: 0 (falsy) 'geri alınacak bir şey yok' demektir, böylece
+        mevcut `if db.geri_al():` çağrıları çalışmaya devam eder.
+        """
+        if not self._silinen_yigin:
+            return 0
+        parti = self._silinen_yigin[-1]
         try:
-            self.cursor.execute("BEGIN")
-            veri = self._son_silinen
-            # SELECT * artık kullanici_id'yi de içerir (8. sütun); onu da
-            # koruyarak geri ekle, yoksa geri alınan kayıt admin'e (1) düşer.
-            if len(veri) >= 8:
-                self.cursor.execute(
-                    "INSERT INTO islemler (id, tarih, tur, kategori, aciklama, "
-                    "tutar, etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?,?)",
-                    veri[:8],
-                )
-            elif len(veri) >= 7:
-                self.cursor.execute(
-                    "INSERT INTO islemler "
-                    "(id, tarih, tur, kategori, aciklama, tutar, etiketler) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    veri[:7],
-                )
-            else:
-                # Eski DB'lerde etiketler sütunu olmayabilir
-                self.cursor.execute(
-                    "INSERT INTO islemler (id, tarih, tur, kategori, aciklama, tutar) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    veri[:6],
-                )
-            self.conn.commit()
-            self._son_silinen = None
-            return True
+            with self._transaction():
+                for veri in parti:
+                    # SELECT * kullanici_id'yi de içerir (8. sütun); onu da
+                    # koruyarak geri ekle, yoksa kayıt admin'e (1) düşer.
+                    if len(veri) >= 8:
+                        self.cursor.execute(
+                            "INSERT INTO islemler (id, tarih, tur, kategori, "
+                            "aciklama, tutar, etiketler, kullanici_id) "
+                            "VALUES (?,?,?,?,?,?,?,?)",
+                            veri[:8],
+                        )
+                    elif len(veri) >= 7:
+                        self.cursor.execute(
+                            "INSERT INTO islemler (id, tarih, tur, kategori, "
+                            "aciklama, tutar, etiketler) VALUES (?,?,?,?,?,?,?)",
+                            veri[:7],
+                        )
+                    else:
+                        # Eski DB'lerde etiketler sütunu olmayabilir
+                        self.cursor.execute(
+                            "INSERT INTO islemler (id, tarih, tur, kategori, "
+                            "aciklama, tutar) VALUES (?,?,?,?,?,?)",
+                            veri[:6],
+                        )
         except Exception:
-            self.conn.rollback()
-            return False
+            return 0
+        self._silinen_yigin.pop()
+        return len(parti)
 
     # ==========================
     # PLANLAMA İŞLEMLERİ

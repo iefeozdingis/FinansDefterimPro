@@ -753,7 +753,10 @@ class Dashboard(ctk.CTkFrame):
         if not secili:
             messagebox.showwarning("Uyarı", "Lütfen önce bir işlem seçiniz.")
             return
-        veri = self.tablo.item(secili[0])["values"]
+        # Düzenleme penceresine HAM satırı ver (biçimli tablo değerini değil)
+        veri = getattr(self, "_satir_map", {}).get(
+            secili[0], self.tablo.item(secili[0])["values"]
+        )
         pencere = IslemDuzenlemePenceresi(self, self.db, veri)
         self.wait_window(pencere)
         self.yenile()
@@ -920,6 +923,27 @@ class Dashboard(ctk.CTkFrame):
             except Exception:
                 pass
 
+    @staticmethod
+    def _satir_bicimle(satir):
+        """Ham işlem satırını tabloya basmadan önce biçimler.
+
+        Tablo ham veri gösteriyordu: tutar '1500.0', tarih '2026-07-15' —
+        oysa uygulamanın her yerinde '1.500,00 ₺' ve '15.07.2026' kullanılıyor.
+        Sütunlar: (id, tarih, tur, kategori, aciklama, tutar, etiketler).
+        """
+        from datetime import datetime
+        deger = list(satir)
+        try:
+            dt = datetime.strptime(str(deger[1]), "%Y-%m-%d")
+            deger[1] = dt.strftime("%d.%m.%Y")
+        except (ValueError, IndexError):
+            pass
+        try:
+            deger[5] = para_formatla(float(deger[5]), sembol=False)
+        except (ValueError, IndexError, TypeError):
+            pass
+        return deger
+
     def _tabloyu_doldur(self):
         """Arama + tür + dönem filtrelerini BİRLİKTE uygulayıp tabloyu doldurur.
 
@@ -945,8 +969,13 @@ class Dashboard(ctk.CTkFrame):
         )
 
         self.tablo.delete(*self.tablo.get_children())
+        # Tabloda BİÇİMLİ değer gösterilir ama düzenleme penceresi HAM satırı
+        # (float tutar, ISO tarih) ister. İkisini item-id ile eşleyen bir map
+        # tutuyoruz; aksi halde düzenlemede float("1.500,00") kırılırdı.
+        self._satir_map = {}
         for satir in satirlar:
-            self.tablo.insert("", "end", values=satir)
+            item = self.tablo.insert("", "end", values=self._satir_bicimle(satir))
+            self._satir_map[item] = satir
 
         self._filtre_butonlarini_guncelle()
         self._durum_mesaji_ciz(satirlar, arama_metni, tur_secili)

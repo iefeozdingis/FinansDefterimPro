@@ -160,7 +160,7 @@ def normalize_date(tarih_str: str) -> str:
 
 
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Geri-al yığınında en fazla kaç silme partisi tutulur
 GERI_AL_YIGIN_SINIRI = 20
@@ -249,6 +249,8 @@ class Database:
             self._migrate_kullanici_id()
         if mevcut < 3:
             self._migrate_giris_denemeleri()
+        if mevcut < 4:
+            self._migrate_kategori_izolasyonu()
         if mevcut < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.conn.commit()
@@ -305,6 +307,32 @@ class Database:
                 self.conn.execute(
                     f"ALTER TABLE {tablo} ADD COLUMN {kolon} {tip}"
                 )
+        self.conn.commit()
+
+    def _migrate_kategori_izolasyonu(self) -> None:
+        """v4: global özel-kategori ayarlarını admin'e (id=1) taşır.
+
+        Kategori anahtarı 'kategoriler_gelir'/'kategoriler_gider' global idi;
+        artık kullanıcıya özel ('..._<uid>'). Mevcut global kategoriler
+        kaybolmasın diye ilk kullanıcının (admin) anahtarına aktarılır.
+        """
+        for tur in ("gelir", "gider"):
+            eski = f"kategoriler_{tur}"
+            yeni = f"kategoriler_{tur}_1"
+            deger = self.conn.execute(
+                "SELECT deger FROM ayarlar WHERE anahtar=?", (eski,)
+            ).fetchone()
+            if deger and deger[0]:
+                # Admin'de zaten varsa üzerine yazma; yoksa taşı
+                var = self.conn.execute(
+                    "SELECT 1 FROM ayarlar WHERE anahtar=?", (yeni,)
+                ).fetchone()
+                if not var:
+                    self.conn.execute(
+                        "INSERT INTO ayarlar (anahtar, deger) VALUES (?, ?)",
+                        (yeni, deger[0]),
+                    )
+                self.conn.execute("DELETE FROM ayarlar WHERE anahtar=?", (eski,))
         self.conn.commit()
 
     def _migrate_butce_kullanici(self) -> None:
@@ -1667,9 +1695,18 @@ class Database:
     # ÖZEL KATEGORİ YÖNETİMİ
     # ==========================
 
+    def _kategori_anahtari(self, tur: str) -> str:
+        """Özel kategori ayar anahtarı — KULLANICIYA ÖZEL.
+
+        Önceden anahtar global ("kategoriler_gider") idi; A kullanıcısının
+        eklediği özel kategori B kullanıcısının formlarında da görünüyordu.
+        Anahtara aktif kullanıcı kimliği eklenerek izolasyon sağlanır.
+        """
+        return f"kategoriler_{tur.lower()}_{self.aktif_kullanici_id}"
+
     def kategori_ekle(self, tur: str, kategori: str) -> None:
-        """Belirtilen tür (Gelir/Gider) için özel kategori ekler."""
-        anahtar = f"kategoriler_{tur.lower()}"
+        """Belirtilen tür (Gelir/Gider) için aktif kullanıcıya özel kategori ekler."""
+        anahtar = self._kategori_anahtari(tur)
         mevcut = self.ayar_oku(anahtar, "") or ""
         kategoriler = [k.strip() for k in mevcut.split(",") if k.strip()]
         if kategori not in kategoriler:
@@ -1677,11 +1714,10 @@ class Database:
             self.ayar_kaydet(anahtar, ",".join(kategoriler))
 
     def kategorileri_getir(self, tur: str) -> List[str]:
-        """Belirtilen tür için tüm kategorileri (varsayılan + özel) döner."""
-        anahtar = f"kategoriler_{tur.lower()}"
+        """Aktif kullanıcının özel kategorilerini döner."""
+        anahtar = self._kategori_anahtari(tur)
         mevcut = self.ayar_oku(anahtar, "") or ""
-        ozel = [k.strip() for k in mevcut.split(",") if k.strip()]
-        return ozel
+        return [k.strip() for k in mevcut.split(",") if k.strip()]
 
     # ==========================
     # TEKRARLAYAN İŞLEMLER

@@ -183,9 +183,14 @@ class GrafiklerSayfasi(ctk.CTkFrame):
         return labels, values
 
     def _aylik_veri(self):
-        """SQL tabanlı aylık özet — tüm veriyi RAM'e çekmez."""
+        """SQL tabanlı aylık özet — tüm veriyi RAM'e çekmez.
+
+        aylik_ozet() en yeni ay önce gelecek şekilde (DESC) döner; grafikte
+        dict anahtarları ekleme sırasıyla çizildiği için x-ekseni ters
+        okunuyordu (en yeni ay solda). Kronolojik sıraya çeviriyoruz.
+        """
         data = {"Gelir": {}, "Gider": {}}
-        for ay, gelir, gider in self.db.aylik_ozet():
+        for ay, gelir, gider in reversed(self.db.aylik_ozet()):
             data["Gelir"][ay] = gelir
             data["Gider"][ay] = gider
         return data

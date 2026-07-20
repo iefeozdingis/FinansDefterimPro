@@ -63,6 +63,48 @@ jobs:
             console.log("CI başarısız issue oluşturuldu.");
 
   # ============================================
+  # CI tekrar yeşile dönünce açık ci-failure issue'larını kapat
+  # (Aksi halde bayat issue'lar birikir ve dedup mantığı yüzünden
+  #  gerçek yeni CI hatalarını maskeler.)
+  # ============================================
+  close-ci-failure-issue:
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Geçmiş CI Failed Issue'larını Kapat
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const wf = context.payload.workflow_run;
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: ["ci-failure"],
+            });
+
+            const sha = wf.head_sha.substring(0, 7);
+            for (const i of issues.data) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: i.number,
+                body: "✅ CI `" + wf.name + "` (`" + wf.head_branch + "`) "
+                  + "artık başarılı (commit `" + sha + "`). Bu issue otomatik kapatılıyor.",
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: i.number,
+                state: "closed",
+                state_reason: "completed",
+              });
+              console.log("Kapatıldı: #" + i.number);
+            }
+
+  # ============================================
   # Yeni issue'lara otomatik etiket ve atama
   # ============================================
   auto-label:

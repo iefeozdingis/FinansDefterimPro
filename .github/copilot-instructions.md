@@ -30,11 +30,12 @@ Bu proje bir Python + CustomTkinter tabanlı gelir/gider kontrol uygulamasıdır
 - `fix: açıklama` — Hata düzeltme
 - `feat: açıklama` — Yeni özellik
 - `chore: açıklama` — Bakım/yapılandırma
+- `ci: açıklama` — CI/CD değişiklikleri
+- `refactor: açıklama` — Davranış değiştirmeyen yeniden yapılandırma
 - Commit mesajları Türkçe, açıklayıcı.
 
-## Detaylı Workflow'lar
-Bkz. `.github/skills/` klasörü:
-- `SKILL.md` — Ana workflow
-- `fix-bug.md` — Hata düzeltme süreci
-- `add-feature.md` — Özellik ekleme süreci
-- `commit-and-ship.md` — Commit ve push kuralları
+## Kalite kapıları (CI ile aynı)
+Push'tan önce üçü de geçmeli:
+- `python -m unittest discover -s tests` — 97 test, atlanmadan
+- `flake8 --config .flake8 .`
+- `mypy .`

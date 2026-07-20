@@ -269,17 +269,37 @@ class AyarlarSayfasi(ctk.CTkFrame):
         yol = filedialog.asksaveasfilename(
             defaultextension=".db", filetypes=[("Veritabanı", "*.db")]
         )
-        if yol:
+        if not yol:
+            return
+        # Hata yakalama şart: yedekle() HMAC anahtarı yazılamazsa
+        # HmacAnahtarHatasi fırlatır. Yakalanmazsa Tk callback'i istisnayı
+        # yutuyor, kullanıcı ne başarı ne hata mesajı görüyordu.
+        try:
             self.db.yedekle(yol)
-            messagebox.showinfo("Başarılı", f"Yedek oluşturuldu: {yol}")
+        except Exception as e:
+            messagebox.showerror("Yedekleme başarısız", str(e))
+            return
+        messagebox.showinfo("Başarılı", f"Yedek oluşturuldu:\n{yol}")
 
     def yedek_geri_yukle(self):
         yol = filedialog.askopenfilename(
             defaultextension=".db", filetypes=[("Veritabanı", "*.db")]
         )
-        if yol:
+        if not yol:
+            return
+        # geri_yukle() geçersiz/bozuk/kurcalanmış dosyada ValueError fırlatır;
+        # yakalanmazsa kullanıcı yanlış dosya seçtiğinde ekranda hiçbir şey
+        # olmuyordu (geri yükleme başarılı mı belli değildi).
+        try:
             self.db.geri_yukle(yol)
-            messagebox.showinfo("Başarılı", "Yedek geri yüklendi.")
+        except Exception as e:
+            messagebox.showerror("Geri yükleme başarısız", str(e))
+            return
+        messagebox.showinfo(
+            "Başarılı",
+            "Yedek geri yüklendi. Değişikliklerin tam yansıması için "
+            "uygulamayı yeniden başlatman önerilir.",
+        )
 
 
 class SifreDegistirPenceresi(ctk.CTkToplevel):

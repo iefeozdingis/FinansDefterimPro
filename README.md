@@ -4,8 +4,10 @@
 
 **Python + CustomTkinter ile geliştirilmiş, şık ve güçlü bir masaüstü finans takip uygulaması.**
 
+<sub>🌍 A local-first, privacy-focused personal finance desktop app (Turkish UI). All data stays on your machine — no cloud, no accounts, no tracking. Income/expense tracking, budgets, debts, savings goals, charts, CSV/Excel/PDF.</sub>
+
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-82%2F82%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-97%2F97%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
@@ -137,28 +139,15 @@ olur. Şifreler bcrypt ile hash'lenir ve en az 8 karakter olmalıdır.
 python -m unittest discover -s tests -v
 ```
 
-```
-✅ test_aylik_karsilastirma
-✅ test_bcrypt_hash
-✅ test_borclar
-✅ test_budget_status_summary
-✅ test_etiket
-✅ test_gunluk_haftalik
-✅ test_import_csv
-✅ test_import_excel
-✅ test_islem_log
-✅ test_planlama
-✅ test_search
-✅ test_tasarruf_hedefi
-✅ test_tekrarlayan
-✅ test_transaction_update_budget_and_settings
-✅ test_undo
-✅ test_user_authentication
-✅ test_yedekle_wal_checkpoint
-✅ test_yillik_karsilastirma
-─────────────────────────
-82 tests — ALL OK
-```
+3 test dosyası, toplam **97 test** (hepsi yeşil):
+
+| Dosya | Kapsam |
+|---|---|
+| `tests/test_database.py` | Veri katmanı: işlem/bütçe/borç/tasarruf, kullanıcı izolasyonu, migrasyon, yedek |
+| `tests/test_para.py` | Para ayrıştırma/biçimlendirme, bütçe eşikleri, tarih biçimleme (Tk gerektirmez) |
+| `tests/test_utils.py` | Tarih formatlama widget davranışı |
+
+> CI, koşan test sayısı 97'nin altına düşerse veya çok fazla test atlanırsa başarısız olur — testlerin sessizce atlanmasını engeller.
 
 ---
 
@@ -171,21 +160,22 @@ FINEding/
 ├── requirements.txt      # Bağımlılıklar
 ├── KURULUM.bat           # 🆕 Tek tıkla kurulum
 ├── run_finans_defterim.bat  # Başlatıcı
+├── version.py            # Sürüm — tek kaynak
 ├── ui/
-│   ├── dashboard.py      # Ana dashboard (kartlar + tablo + filtre + ihracat)
-│   ├── gelir.py          # Gelir ekleme sayfası
-│   ├── gider.py          # Gider ekleme sayfası
+│   ├── dashboard.py      # Ana dashboard (kartlar + tablo + filtre + dışa aktar)
+│   ├── gelir.py / gider.py  # Gelir/gider ekleme sayfaları
+│   ├── islem_formu.py    # Ortak işlem formu
 │   ├── butce.py          # Bütçe yönetimi
-│   ├── planlama.py       # Planlama + borç/alacak + tekrarlayan işlemler
+│   ├── planlama.py       # Planlama + borç/alacak + tekrarlayan + tasarruf
 │   ├── grafikler.py      # Grafikler ve aylık karşılaştırma
 │   ├── global_arama.py   # Ctrl+F ile tüm uygulamada arama
 │   ├── ayarlar.py        # Ayarlar + admin paneli
 │   ├── giris.py          # Giriş/kayıt ekranı
 │   ├── hakkinda.py       # Hakkında sayfası
-│   └── utils.py          # Tarih/para formatlama yardımcıları
-├── tests/
-│   └── test_database.py  # 7 birim testi
-├── database/             # SQLite veritabanı
+│   ├── money.py          # Para/eşik saf fonksiyonları (GUI-bağımsız)
+│   └── utils.py          # Tarih/para/modal yardımcıları
+├── tests/                # 3 dosya, 97 test
+├── database/             # SQLite veritabanı (.gitignore)
 ├── backups/              # Otomatik yedekler
 ├── logs/                 # Uygulama logları
 └── assets/               # İkon ve tema dosyaları
@@ -230,9 +220,11 @@ FINEding/
 
 ## 📄 Lisans
 
-MIT — Dilediğin gibi kullan, değiştir, paylaş.
+[MIT](LICENSE) — Dilediğin gibi kullan, değiştir, paylaş.
 
 ---
+
+**FINEding** — Finansal geleceğini planla, kontrol et! 💎
 
 <div align="center">
 
@@ -241,95 +233,3 @@ MIT — Dilediğin gibi kullan, değiştir, paylaş.
 [![Star History Chart](https://img.shields.io/github/stars/iefeozdingis/FINEding?style=social)](https://github.com/iefeozdingis/FINEding)
 
 </div>
-
-### Tek Tıkla Çalıştırma
-`run_finans_defterim.bat` dosyasına çift tıklayarak uygulamayı doğrudan başlatabilirsin.
-
----
-
-## 🎯 İlk Kullanım
-
-1. Uygulama ilk açıldığında giriş ekranı gelir
-2. **"📝 Yeni Hesap Oluştur"** butonuna tıkla
-3. Ad soyad, kullanıcı adı ve şifreni belirle
-4. **İlk oluşturulan hesap otomatik olarak 👑 Admin olur**
-5. Giriş yap ve kullanmaya başla!
-
-> ℹ️ Veritabanı dosyası (`database/finans.db`) `.gitignore`'a eklenmiştir.  
-> GitHub'dan indiren herkes sıfırdan kendi hesabını oluşturur.
-
----
-
-## 👑 Admin Özellikleri
-
-İlk kayıt olan kullanıcı (ID: 1) admin yetkilerine sahiptir:
-
-- **Kullanıcı Listesi**: Tüm kayıtlı kullanıcıları görüntüle
-- **Şifre Sıfırlama**: Herhangi bir kullanıcının şifresini değiştir
-- **Kullanıcı Silme**: İstenmeyen hesapları kalıcı olarak sil
-
-Admin paneline **Ayarlar** sayfasının en altından ulaşılır.
-
----
-
-## 🛠 Teknoloji
-
-| Teknoloji | Kullanım |
-|---|---|
-| Python 3.10+ | Ana dil |
-| CustomTkinter | Modern masaüstü arayüzü |
-| SQLite3 | Yerel veritabanı |
-| Matplotlib | Grafik ve görselleştirme |
-| Pillow (PIL) | Görüntü işleme |
-| Plyer | Masaüstü bildirimleri |
-| PyStray | Sistem tepsisi entegrasyonu |
-| OpenPyXL | Excel dışa aktarım |
-| ReportLab | PDF dışa aktarım |
-
----
-
-## 📁 Proje Yapısı
-
-```
-FINEding/
-├── main.py              # Uygulama giriş noktası
-├── database.py          # Veritabanı işlemleri
-├── requirements.txt     # Python bağımlılıkları
-├── run_finans_defterim.bat  # Tek tıkla başlatma
-├── run_finans_defterim.vbs  # Sessiz başlatma
-├── assets/              # Logo ve tema dosyaları
-├── database/            # SQLite veritabanı (.gitignore)
-├── exports/             # Dışa aktarılan raporlar
-├── logs/                # Uygulama logları
-├── tests/               # Test dosyaları
-└── ui/                  # Arayüz modülleri
-    ├── dashboard.py     # Ana gösterge paneli
-    ├── gelir.py         # Gelir ekleme sayfası
-    ├── gider.py         # Gider ekleme sayfası
-    ├── giris.py         # Giriş ekranı
-    ├── grafikler.py     # Grafikler sayfası
-    ├── butce.py         # Bütçe yönetimi
-    ├── planlama.py      # Planlama & borç takibi
-    ├── global_arama.py  # Ctrl+F ile tüm uygulamada arama
-    ├── ayarlar.py       # Ayarlar & admin paneli
-    ├── hakkinda.py      # Hakkında sayfası
-    └── utils.py         # Yardımcı fonksiyonlar
-```
-
----
-
-## 🧪 Test
-
-```bash
-python -m unittest discover -s tests -v
-```
-
----
-
-## 📝 Lisans
-
-MIT License — Dilediğin gibi kullan, değiştir, paylaş.
-
----
-
-**FINEding** — Finansal geleceğini planla, kontrol et! 💎

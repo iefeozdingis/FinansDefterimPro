@@ -443,6 +443,56 @@ class DatabaseTests(unittest.TestCase):
             with self.assertRaises(dbm.HmacAnahtarHatasi):
                 dbm._hmac_anahtari()
 
+    def test_kategori_izolasyonu(self):
+        """Özel kategoriler kullanıcılar arası sızmamalı."""
+        self.db.kullanici_kaydet("admin", "admin123", "Admin")
+        self.db.kullanici_kaydet("ayse", "ayse1234", "Ayşe")
+
+        self.db.oturum_ac(1)
+        self.db.kategori_ekle("Gider", "AdminÖzel")
+        self.db.oturum_ac(2)
+        self.db.kategori_ekle("Gider", "AyşeÖzel")
+
+        # Her kullanıcı yalnızca kendi kategorisini görmeli
+        self.assertEqual(self.db.kategorileri_getir("Gider"), ["AyşeÖzel"])
+        self.db.oturum_ac(1)
+        self.assertEqual(self.db.kategorileri_getir("Gider"), ["AdminÖzel"])
+
+    def test_kategori_migrasyonu_global_admine_tasinir(self):
+        """v3 DB'deki global kategoriler admin'e (id=1) taşınmalı."""
+        eski_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(eski_dir.cleanup)
+        eski_yol = Path(eski_dir.name) / "v3.db"
+
+        # Mevcut şemayı kur, sonra user_version'ı 3'e düşürüp global kategori yaz
+        tmp = db_module.DB_PATH
+        db_module.DB_PATH = eski_yol
+        hazir = db_module.Database()
+        hazir.conn.execute(
+            "INSERT INTO ayarlar (anahtar, deger) VALUES ('kategoriler_gider','Kripto,Kira')"
+        )
+        hazir.conn.execute("PRAGMA user_version=3")
+        hazir.conn.commit()
+        hazir.close()
+
+        # Yeniden aç → v4 migrasyonu çalışmalı
+        yeni = db_module.Database()
+        self.addCleanup(yeni.close)
+        db_module.DB_PATH = tmp
+
+        self.assertEqual(
+            yeni.conn.execute("PRAGMA user_version").fetchone()[0],
+            db_module.SCHEMA_VERSION,
+        )
+        # Global anahtar silinmiş, admin'in anahtarına taşınmış olmalı
+        self.assertIsNone(
+            yeni.conn.execute(
+                "SELECT deger FROM ayarlar WHERE anahtar='kategoriler_gider'"
+            ).fetchone()
+        )
+        yeni.oturum_ac(1)
+        self.assertEqual(yeni.kategorileri_getir("Gider"), ["Kripto", "Kira"])
+
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)
         self.db.planlanan_ekle(7, 2026, "Kira", "Gider", "Ev kirası", 5000)

@@ -3,7 +3,7 @@
 Tüm önemli değişiklikler bu dosyada tutulur. Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/)
 esas alır; sürümleme [Semantic Versioning](https://semver.org/lang/tr/).
 
-## [1.7.0] - Yayınlanacak
+## [1.7.0] - 2026-07-22
 
 Kapsamlı bir denetim ve sağlamlaştırma turu. Test sayısı 61 → 107.
 

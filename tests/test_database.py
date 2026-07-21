@@ -221,6 +221,56 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(poz["borc"], 2000.0)
         self.assertEqual(poz["net"], 3000.0)
 
+    def test_borc_odemeler_fk_cascade(self):
+        """FK: borclar'dan doğrudan silince ödemeleri cascade ile silinmeli."""
+        borc_id = self.db.borc_ekle(
+            "Borç", "Kredi", "Banka", 1000, 1000, "01.07.2026", "01.12.2026"
+        )
+        self.db.borc_odeme_yap(borc_id, 250, "15.07.2026")
+        self.assertEqual(len(self.db.borc_odemeleri(borc_id)), 1)
+
+        # borc_sil'i ATLA, doğrudan borclar'dan sil → FK cascade devrede olmalı
+        self.db.cursor.execute("DELETE FROM borclar WHERE id=?", (borc_id,))
+        self.db.conn.commit()
+        self.db.cursor.execute(
+            "SELECT COUNT(*) FROM borc_odemeler WHERE borc_id=?", (borc_id,)
+        )
+        self.assertEqual(self.db.cursor.fetchone()[0], 0)
+
+    def test_borc_odemeler_fk_migrasyonu(self):
+        """v5 FK'siz DB'de yetim ödeme temizlenip FK eklenmeli."""
+        eski_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(eski_dir.cleanup)
+        eski_yol = Path(eski_dir.name) / "v5.db"
+
+        db_module.DB_PATH = eski_yol
+        hazir = db_module.Database()
+        # FK'siz eski tabloyu taklit et: yeni tabloyu düşürüp FK'siz kur
+        hazir.conn.executescript("""
+            DROP TABLE borc_odemeler;
+            CREATE TABLE borc_odemeler(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                borc_id INTEGER NOT NULL, tarih TEXT NOT NULL, tutar REAL NOT NULL);
+            INSERT INTO borclar (id, tur, aciklama, kisi, toplam_tutar, kalan_tutar,
+                baslangic_tarih, vade_tarih, durum, kullanici_id)
+                VALUES (1,'Borç','X','Y',100,100,'2026-07-01','2026-12-01','Aktif',1);
+            INSERT INTO borc_odemeler (borc_id, tarih, tutar) VALUES (1,'2026-07-05',50);
+            INSERT INTO borc_odemeler (borc_id, tarih, tutar) VALUES (999,'2026-07-05',30);
+        """)
+        hazir.conn.execute("PRAGMA user_version=5")
+        hazir.conn.commit()
+        hazir.close()
+
+        yeni = db_module.Database()
+        self.addCleanup(yeni.close)
+        # FK eklenmiş olmalı
+        self.assertTrue(
+            yeni.conn.execute("PRAGMA foreign_key_list(borc_odemeler)").fetchall()
+        )
+        # Geçerli ödeme kalmış, yetim (borc_id=999) atılmış olmalı
+        n = yeni.conn.execute("SELECT COUNT(*) FROM borc_odemeler").fetchone()[0]
+        self.assertEqual(n, 1)
+
     def test_borc_sil_odemeleri_de_siler(self):
         """Borç silinince ödeme geçmişi yetim kalmamalı."""
         borc_id = self.db.borc_ekle(
@@ -517,6 +567,27 @@ class DatabaseTests(unittest.TestCase):
         )
         yeni.oturum_ac(1)
         self.assertEqual(yeni.kategorileri_getir("Gider"), ["Kripto", "Kira"])
+
+    def test_ice_aktarim_ayristir_ve_ekle(self):
+        """Ayrıştırma (DB'siz) ile ekleme (DB) ayrı çalışmalı — UI thread'i için."""
+        import csv as _csv
+        yol = Path(self.temp_dir.name) / "islemler.csv"
+        with open(yol, "w", newline="", encoding="utf-8-sig") as f:
+            w = _csv.writer(f)
+            w.writerow(["tarih", "tur", "kategori", "aciklama", "tutar"])
+            w.writerow(["01.07.2026", "Gelir", "Maaş", "Temmuz", "10.000"])
+            w.writerow(["05.07.2026", "Gider", "Market", "Alışveriş", "1.250,50"])
+
+        # Ayrıştırma DB'ye dokunmadan satırları döndürür
+        satirlar = self.db.csv_satirlarini_oku(str(yol))
+        self.assertEqual(len(satirlar), 2)
+        self.assertEqual(len(self.db.tum_islemler()), 0)  # henüz eklenmedi
+
+        # Ekleme ana thread'de yapılır
+        eklenen = self.db.satirlari_ice_aktar(satirlar)
+        self.assertEqual(eklenen, 2)
+        self.assertEqual(self.db.toplam_gelir(), 10000.0)
+        self.assertEqual(self.db.toplam_gider(), 1250.50)
 
     def test_planlama(self):
         self.db.planlanan_ekle(7, 2026, "Maaş", "Gelir", "Temmuz maaşı", 15000)

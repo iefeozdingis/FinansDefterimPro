@@ -160,7 +160,7 @@ def normalize_date(tarih_str: str) -> str:
 
 
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Geri-al yığınında en fazla kaç silme partisi tutulur
 GERI_AL_YIGIN_SINIRI = 20
@@ -255,6 +255,8 @@ class Database:
             self._migrate_kategori_izolasyonu()
         if mevcut < 5:
             self._migrate_borc_bakiyeden_ayir()
+        if mevcut < 6:
+            self._migrate_borc_odemeler_fk()
         if mevcut < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.conn.commit()
@@ -312,6 +314,57 @@ class Database:
                     f"ALTER TABLE {tablo} ADD COLUMN {kolon} {tip}"
                 )
         self.conn.commit()
+
+    def _migrate_borc_odemeler_fk(self) -> None:
+        """v6: borc_odemeler'e borc_id → borclar(id) FK'sini ekler.
+
+        SQLite'ta var olan bir tabloya ALTER ile FK eklenemez; tablo FK'li
+        olarak yeniden kurulup veri kopyalanır. Yetim ödeme satırları (borcu
+        artık olmayan) kopyalanmadan atılır — zaten geçersizler.
+        SQLite dokümanının önerdiği gibi rebuild sırasında foreign_keys
+        geçici kapatılır.
+        """
+        # Tablo yoksa (yeni kurulum create_tables halleder) atla
+        var = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='borc_odemeler'"
+        ).fetchone()
+        if not var:
+            return
+        # Zaten FK varsa tekrar kurma
+        fkler = self.conn.execute(
+            "PRAGMA foreign_key_list(borc_odemeler)"
+        ).fetchall()
+        if fkler:
+            return
+
+        self.conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            self.conn.execute("BEGIN")
+            self.conn.execute("""
+                CREATE TABLE borc_odemeler_yeni(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    borc_id INTEGER NOT NULL,
+                    tarih TEXT NOT NULL,
+                    tutar REAL NOT NULL,
+                    FOREIGN KEY (borc_id) REFERENCES borclar(id) ON DELETE CASCADE
+                )
+            """)
+            # Yalnızca hâlâ var olan borçlara ait ödemeleri taşı (yetimleri at)
+            self.conn.execute("""
+                INSERT INTO borc_odemeler_yeni (id, borc_id, tarih, tutar)
+                SELECT id, borc_id, tarih, tutar FROM borc_odemeler
+                WHERE borc_id IN (SELECT id FROM borclar)
+            """)
+            self.conn.execute("DROP TABLE borc_odemeler")
+            self.conn.execute(
+                "ALTER TABLE borc_odemeler_yeni RENAME TO borc_odemeler"
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        finally:
+            self.conn.execute("PRAGMA foreign_keys=ON")
 
     def _migrate_borc_bakiyeden_ayir(self) -> None:
         """v5: borç/alacağı ana bakiyeden ayır (muhasebe modeli B).
@@ -555,13 +608,17 @@ class Database:
         )
         """)
 
-        # Borç/alacak ödeme geçmişi
+        # Borç/alacak ödeme geçmişi.
+        # FK: borç silinince ödemeleri de otomatik silinsin (yetim kayıt yok).
+        # PRAGMA foreign_keys=ON (bkz. _baglan) ile birlikte DB seviyesinde
+        # bütünlük sağlar; elle temizlemeye güvenmez.
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS borc_odemeler(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             borc_id INTEGER NOT NULL,
             tarih TEXT NOT NULL,
-            tutar REAL NOT NULL
+            tutar REAL NOT NULL,
+            FOREIGN KEY (borc_id) REFERENCES borclar(id) ON DELETE CASCADE
         )
         """)
 
@@ -825,49 +882,41 @@ class Database:
                      csv_guvenli(satir[4]), satir[5]]
                 )
 
-    def import_csv(self, path: str) -> int:
-        """CSV dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner.
+    @staticmethod
+    def csv_satirlarini_oku(path: str) -> List[Dict[str, str]]:
+        """CSV dosyasını satır sözlüklerine ayrıştırır — DB'ye DOKUNMAZ.
 
-        Atlanan satır sayısı ayrıca self.son_ice_aktarim_atlanan'da tutulur
-        (UI kullanıcıya kaç satırın neden alınamadığını gösterebilsin diye)."""
-        eklenen = 0
-        atlanan = 0
-        # Tüm içe aktarım tek transaction: hata anında yarım aktarılmış
-        # satırlar geri alınır, kısmi değişiklik sonraki commit'e sızmaz.
+        Ayrı bir metot: dosya okuma/ayrıştırma (yavaş kısım) UI worker
+        thread'inde yapılabilsin, DB yazımı ana thread'de kalsın. Böylece
+        büyük dosya içe aktarımı arayüzü dondurmaz (bkz. satirlari_ice_aktar).
+        """
         with open(path, "r", encoding="utf-8-sig") as dosya:
-            reader = csv.DictReader(dosya)
-            with self._transaction():
-                for satir in reader:
-                    try:
-                        n = self._satir_ekle_guvenli(satir)
-                        eklenen += n
-                        if n == 0:
-                            atlanan += 1
-                    except (ValueError, KeyError):
-                        atlanan += 1
-                        continue
-        self.son_ice_aktarim_atlanan = atlanan
-        return eklenen
+            return list(csv.DictReader(dosya))
 
-    def import_excel(self, path: str) -> int:
-        """Excel (.xlsx) dosyasından işlemleri içe aktarır. Eklenen satır sayısını döner."""
+    @staticmethod
+    def excel_satirlarini_oku(path: str) -> List[Dict[str, str]]:
+        """Excel (.xlsx) dosyasını normalize edilmiş satır sözlüklerine
+        ayrıştırır — DB'ye DOKUNMAZ (worker thread'de güvenli)."""
         from openpyxl import load_workbook
 
         wb = load_workbook(path, read_only=True, data_only=True)
         try:
             ws = wb.active
-            satirlar = ws.iter_rows(values_only=True)
+            satirlar_iter = ws.iter_rows(values_only=True)
             try:
-                baslik = [str(h).strip().lower() if h else "" for h in next(satirlar)]
+                baslik = [
+                    str(h).strip().lower() if h else "" for h in next(satirlar_iter)
+                ]
             except StopIteration:
-                return 0
+                return []
 
-            # Türkçe/İngilizce başlık eşlemesi (ID/Tarih/Tür/Kategori/Açıklama/Tutar/Etiket)
+            # Türkçe/İngilizce başlık eşlemesi
             eslesme = {
                 "tarih": "tarih", "date": "tarih",
                 "tür": "tur", "tur": "tur", "type": "tur",
                 "kategori": "kategori", "category": "kategori",
-                "açıklama": "aciklama", "aciklama": "aciklama", "description": "aciklama",
+                "açıklama": "aciklama", "aciklama": "aciklama",
+                "description": "aciklama",
                 "tutar": "tutar", "amount": "tutar",
                 "etiket": "etiketler", "etiketler": "etiketler", "tags": "etiketler",
             }
@@ -876,35 +925,51 @@ class Database:
                 if h in eslesme:
                     indeksler[eslesme[h]] = i
 
-            eklenen = 0
-            atlanan = 0
-            # Tek transaction (bkz. import_csv)
-            with self._transaction():
-                for row in satirlar:
-                    if row is None or all(v is None for v in row):
-                        continue
-                    try:
-                        satir = {
-                            "tarih": row[indeksler["tarih"]] if "tarih" in indeksler else "",
-                            "tur": row[indeksler["tur"]] if "tur" in indeksler else "",
-                            "kategori": row[indeksler["kategori"]] if "kategori" in indeksler else "",
-                            "aciklama": row[indeksler["aciklama"]] if "aciklama" in indeksler else "",
-                            "tutar": row[indeksler["tutar"]] if "tutar" in indeksler else 0,
-                            "etiketler": row[indeksler["etiketler"]] if "etiketler" in indeksler else "",
-                        }
-                        n = self._satir_ekle_guvenli(
-                            {k: ("" if v is None else str(v)) for k, v in satir.items()}
-                        )
-                        eklenen += n
-                        if n == 0:
-                            atlanan += 1
-                    except (ValueError, KeyError):
-                        atlanan += 1
-                        continue
-            self.son_ice_aktarim_atlanan = atlanan
-            return eklenen
+            sonuc: List[Dict[str, str]] = []
+            for row in satirlar_iter:
+                if row is None or all(v is None for v in row):
+                    continue
+                satir = {
+                    k: (row[indeksler[k]] if k in indeksler else "")
+                    for k in ("tarih", "tur", "kategori", "aciklama", "tutar",
+                              "etiketler")
+                }
+                sonuc.append(
+                    {k: ("" if v is None else str(v)) for k, v in satir.items()}
+                )
+            return sonuc
         finally:
             wb.close()
+
+    def satirlari_ice_aktar(self, satirlar: List[Dict[str, str]]) -> int:
+        """Ayrıştırılmış satırları TEK transaction'da ekler (ana thread).
+
+        Atlanan satır sayısı self.son_ice_aktarim_atlanan'da tutulur.
+        """
+        eklenen = 0
+        atlanan = 0
+        with self._transaction():
+            for satir in satirlar:
+                try:
+                    n = self._satir_ekle_guvenli(satir)
+                    eklenen += n
+                    if n == 0:
+                        atlanan += 1
+                except (ValueError, KeyError):
+                    atlanan += 1
+                    continue
+        self.son_ice_aktarim_atlanan = atlanan
+        return eklenen
+
+    def import_csv(self, path: str) -> int:
+        """CSV dosyasından işlemleri içe aktarır (ayrıştır + ekle). Kolaylık
+        sarmalayıcısı; UI donmasını önlemek için ayrıştırma ve ekleme ayrı
+        çağrılabilir (bkz. csv_satirlarini_oku / satirlari_ice_aktar)."""
+        return self.satirlari_ice_aktar(self.csv_satirlarini_oku(path))
+
+    def import_excel(self, path: str) -> int:
+        """Excel dosyasından işlemleri içe aktarır (ayrıştır + ekle)."""
+        return self.satirlari_ice_aktar(self.excel_satirlarini_oku(path))
 
     @staticmethod
     def _tutar_parse(ham: Any) -> float:

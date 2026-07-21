@@ -727,22 +727,51 @@ class Dashboard(ctk.CTkFrame):
         ):
             return
 
-        try:
-            if yol.lower().endswith(".xlsx"):
-                eklenen = self.db.import_excel(yol)
-            else:
-                eklenen = self.db.import_csv(yol)
-            atlanan = getattr(self.db, "son_ice_aktarim_atlanan", 0)
-            mesaj = f"{eklenen} işlem içe aktarıldı."
-            if atlanan:
-                mesaj += (
-                    f"\n{atlanan} satır alınamadı (eksik/hatalı tarih, tutar "
-                    "veya Gelir/Gider dışı tür)."
+        # DOSYA AYRIŞTIRMA (yavaş kısım) worker thread'de; DB YAZMA ana
+        # thread'de. Önceden tüm içe aktarım ana thread'deydi ve büyük
+        # dosyalarda arayüz "yanıt vermiyor" durumuna düşüyordu. SQLite
+        # bağlantısı ana thread'e ait olduğu için yazma orada kalmalı.
+        import threading
+
+        kok = self.winfo_toplevel()
+        excel = yol.lower().endswith(".xlsx")
+
+        def calis():
+            hata = None
+            satirlar = None
+            try:
+                satirlar = (
+                    self.db.excel_satirlarini_oku(yol) if excel
+                    else self.db.csv_satirlarini_oku(yol)
                 )
-            messagebox.showinfo("İçe Aktarma", mesaj)
-            self.yenile()
-        except Exception as e:
-            messagebox.showerror("Hata", f"İçe aktarma başarısız: {e}")
+            except Exception as e:  # noqa: BLE001
+                hata = e
+
+            def bitir():
+                if hata is not None:
+                    messagebox.showerror("Hata", f"İçe aktarma başarısız: {hata}")
+                    return
+                try:
+                    eklenen = self.db.satirlari_ice_aktar(satirlar or [])
+                except Exception as e:  # noqa: BLE001
+                    messagebox.showerror("Hata", f"İçe aktarma başarısız: {e}")
+                    return
+                atlanan = getattr(self.db, "son_ice_aktarim_atlanan", 0)
+                mesaj = f"{eklenen} işlem içe aktarıldı."
+                if atlanan:
+                    mesaj += (
+                        f"\n{atlanan} satır alınamadı (eksik/hatalı tarih, tutar "
+                        "veya Gelir/Gider dışı tür)."
+                    )
+                messagebox.showinfo("İçe Aktarma", mesaj)
+                self.yenile()
+
+            try:
+                kok.after(0, bitir)
+            except Exception:
+                pass
+
+        threading.Thread(target=calis, daemon=True).start()
 
     # ==========================
     # Seçili İşlemi Sil

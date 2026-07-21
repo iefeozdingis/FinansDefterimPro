@@ -7,7 +7,7 @@
 <sub>🌍 A local-first, privacy-focused personal finance desktop app (Turkish UI). All data stays on your machine — no cloud, no accounts, no tracking. Income/expense tracking, budgets, debts, savings goals, charts, CSV/Excel/PDF.</sub>
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-100%2F100%20✅-green)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-103%2F103%20✅-green)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/iefeozdingis/FINEding)](https://github.com/iefeozdingis/FINEding/issues)
 
@@ -139,7 +139,7 @@ olur. Şifreler bcrypt ile hash'lenir ve en az 8 karakter olmalıdır.
 python -m unittest discover -s tests -v
 ```
 
-3 test dosyası, toplam **100 test** (hepsi yeşil):
+3 test dosyası, toplam **103 test** (hepsi yeşil):
 
 | Dosya | Kapsam |
 |---|---|
@@ -147,7 +147,7 @@ python -m unittest discover -s tests -v
 | `tests/test_para.py` | Para ayrıştırma/biçimlendirme, bütçe eşikleri, tarih biçimleme (Tk gerektirmez) |
 | `tests/test_utils.py` | Tarih formatlama widget davranışı |
 
-> CI, koşan test sayısı 100'ün altına düşerse veya çok fazla test atlanırsa başarısız olur — testlerin sessizce atlanmasını engeller.
+> CI, koşan test sayısı 103'ün altına düşerse veya çok fazla test atlanırsa başarısız olur — testlerin sessizce atlanmasını engeller.
 
 ---
 
@@ -174,7 +174,7 @@ FINEding/
 │   ├── hakkinda.py       # Hakkında sayfası
 │   ├── money.py          # Para/eşik saf fonksiyonları (GUI-bağımsız)
 │   └── utils.py          # Tarih/para/modal yardımcıları
-├── tests/                # 3 dosya, 100 test
+├── tests/                # 3 dosya, 103 test
 ├── database/             # SQLite veritabanı (.gitignore)
 ├── backups/              # Otomatik yedekler
 ├── logs/                 # Uygulama logları

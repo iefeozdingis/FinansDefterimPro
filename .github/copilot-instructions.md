@@ -36,6 +36,6 @@ Bu proje bir Python + CustomTkinter tabanlı gelir/gider kontrol uygulamasıdır
 
 ## Kalite kapıları (CI ile aynı)
 Push'tan önce üçü de geçmeli:
-- `python -m unittest discover -s tests` — 97 test, atlanmadan
+- `python -m unittest discover -s tests` — 100 test, atlanmadan
 - `flake8 --config .flake8 .`
 - `mypy .`

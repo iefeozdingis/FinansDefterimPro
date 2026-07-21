@@ -538,8 +538,6 @@ class PlanlamaSayfasi(ctk.CTkFrame):
         durum = self.b_durum.get()
         borclar = self.db.borclari_listele(durum)
 
-        toplam_borc = 0.0
-        toplam_alacak = 0.0
         for b in borclar:
             self.b_tablo.insert(
                 "",
@@ -556,16 +554,17 @@ class PlanlamaSayfasi(ctk.CTkFrame):
                     b["durum"],
                 ),
             )
-            if b["durum"] == "Aktif":
-                if b["tur"] == "Borç":
-                    toplam_borc += b["kalan_tutar"]
-                else:
-                    toplam_alacak += b["kalan_tutar"]
 
+        # Net pozisyon TABLO FİLTRESİNDEN BAĞIMSIZ hesaplanır (aktif tüm
+        # borç/alacak). Bu tutar ana bakiyeye karışmaz — borç/alacak ayrı bir
+        # bilanço kalemidir (muhasebe modeli B).
+        poz = self.db.borc_net_pozisyon()
+        net = poz["net"]
+        net_isaret = "🟢" if net >= 0 else "🔴"
         self.b_ozet.configure(
-            text=f"🔴 Borç: {para_formatla(toplam_borc, ondalik=0)}  |  "
-            f"🟢 Alacak: {para_formatla(toplam_alacak, ondalik=0)}  |  "
-            f"📊 Net: {para_formatla(toplam_alacak - toplam_borc, ondalik=0)}"
+            text=f"Sana borçlu: {para_formatla(poz['alacak'], ondalik=0)}  |  "
+            f"Senin borcun: {para_formatla(poz['borc'], ondalik=0)}  |  "
+            f"{net_isaret} Net: {para_formatla(net, ondalik=0)}"
         )
 
     def _borc_ekle_ac(self):
@@ -1011,7 +1010,7 @@ class BorcPenceresi(ctk.CTkToplevel):
 
 
 class BorcOdemePenceresi(ctk.CTkToplevel):
-    """Borç/Alacak ödeme penceresi — kalanı düşürür ve gerçek işlem üretir."""
+    """Borç/Alacak ödeme penceresi — kalanı düşürür; bakiyeye varsayılan dokunmaz."""
 
     def __init__(self, parent, borc_id, db, yenile_cb):
         super().__init__(parent)
@@ -1054,17 +1053,18 @@ class BorcOdemePenceresi(ctk.CTkToplevel):
         tarih_bind(self.tarih)
 
         self.islem_olustur = ctk.CTkCheckBox(
-            self, text="Gelir/gider işlemi olarak da kaydet"
+            self, text="Bu ödemeyi harcama/gelir defterime de ekle"
         )
-        self.islem_olustur.select()
+        # VARSAYILAN KAPALI: Borç/alacak ayrı bir bilanço kalemidir, otomatik
+        # olarak bakiyeye/gelir-gidere yansımaz (net pozisyon panelinde izlenir).
+        # İşaretlenirse ödeme ek olarak bir gelir/gider işlemi de oluşturur —
+        # bilinçli tercih. Önceden varsayılan açıktı ve çift sayıma yol açıyordu.
+        self.islem_olustur.deselect()
         self.islem_olustur.pack(pady=(8, 0))
 
-        # Ne yaptığını açıkça söyle: kutu varsayılan işaretli olduğu için,
-        # harcamayı ayrıca kaydeden kullanıcıda habersiz mükerrer gider
-        # oluşuyor ve toplam gider şişiyordu.
         ctk.CTkLabel(
             self,
-            text="Bu ödemeyi ayrıca harcama listene ekler",
+            text="Kapalı bırak: sadece borç/alacak durumu güncellenir",
             font=("Segoe UI", 11),
             text_color="#94a3b8",
         ).pack(pady=(0, 8))

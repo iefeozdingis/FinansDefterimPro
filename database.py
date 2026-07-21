@@ -160,7 +160,7 @@ def normalize_date(tarih_str: str) -> str:
 
 
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Geri-al yığınında en fazla kaç silme partisi tutulur
 GERI_AL_YIGIN_SINIRI = 20
@@ -192,6 +192,8 @@ class Database:
         # Tek slot yerine yığın: toplu silmede yalnızca son kayıt geri
         # alınabiliyor, kalanlar sessizce kalıcı kayboluyordu.
         self._silinen_yigin: List[List[Any]] = []
+        # v5 migrasyonunda bakiyeden ayrılan eski borç işlemi sayısı (bilgi)
+        self.migrate_silinen_borc_islem = 0
         # Aktif oturum kullanıcısı — tüm finans sorguları bununla filtrelenir.
         # Varsayılan 1 (ilk/admin kullanıcı); giriş sonrası oturum_ac ile
         # gerçek kullanıcıya ayarlanır.
@@ -251,6 +253,8 @@ class Database:
             self._migrate_giris_denemeleri()
         if mevcut < 4:
             self._migrate_kategori_izolasyonu()
+        if mevcut < 5:
+            self._migrate_borc_bakiyeden_ayir()
         if mevcut < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.conn.commit()
@@ -307,6 +311,35 @@ class Database:
                 self.conn.execute(
                     f"ALTER TABLE {tablo} ADD COLUMN {kolon} {tip}"
                 )
+        self.conn.commit()
+
+    def _migrate_borc_bakiyeden_ayir(self) -> None:
+        """v5: borç/alacağı ana bakiyeden ayır (muhasebe modeli B).
+
+        Eski model her borç/alacak ödemesini islemler'e 'borc-odeme' etiketli
+        bir Gelir/Gider olarak yazıyordu; bu, bakiyeyi anapara kadar şişiriyor
+        ve kredili alışverişte çift sayıma yol açıyordu. Bu satırları islemler'den
+        siliyoruz — ÖDEME GEÇMİŞİ borc_odemeler tablosunda korunur, yani veri
+        kaybı yok; yalnızca bakiyeyi bozan türev kayıtlar temizlenir.
+
+        Kaç satır silindiği self.migrate_silinen_borc_islem'e yazılır (bilgi/log).
+        """
+        try:
+            cur = self.conn.execute(
+                "SELECT COUNT(*) FROM islemler WHERE etiketler='borc-odeme'"
+            )
+            adet = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            adet = 0  # islemler/etiketler yoksa (yeni kurulum) yapılacak iş yok
+        if adet:
+            self.conn.execute(
+                "DELETE FROM islemler WHERE etiketler='borc-odeme'"
+            )
+            logging.getLogger(__name__).info(
+                "Borç/alacak modeli B: %d 'borc-odeme' işlemi bakiyeden ayrıldı "
+                "(geçmiş borc_odemeler'de korunuyor).", adet
+            )
+        self.migrate_silinen_borc_islem = adet
         self.conn.commit()
 
     def _migrate_kategori_izolasyonu(self) -> None:
@@ -1347,15 +1380,20 @@ class Database:
 
     def borc_odeme_yap(
         self, borc_id: int, odeme_tutar: float, tarih: str,
-        islem_olustur: bool = True,
+        islem_olustur: bool = False,
     ) -> None:
-        """Borç/alacağa ödeme işler: kalanı düşürür, ödeme geçmişine yazar ve
-        (istenirse) gerçek bir gelir/gider işlemi oluşturur.
+        """Borç/alacağa ödeme işler: kalanı düşürür, ödeme geçmişine yazar.
 
-        Önceden ödeme yalnızca 'kalan tutarı elle düşür' şeklindeydi; para
-        bakiyeye hiç yansımıyordu. Artık ödeme atomik olarak: (1) islemler'e
-        Borç için Gider / Alacak (tahsilat) için Gelir kaydı, (2) borc_odemeler
-        geçmiş satırı, (3) kalan_tutar düşümü + durum güncellemesi yapar.
+        MUHASEBE MODELİ (B): Borç/alacak bir bilanço kalemidir, gelir/gider
+        DEĞİL. Bu yüzden ödeme VARSAYILAN OLARAK ana bakiyeye/gelir-gidere
+        dokunmaz; borç/alacak durumu ayrı bir "net pozisyon" olarak izlenir
+        (bkz. borc_net_pozisyon). Önceki model ödemeyi Gelir/Gider yazıyordu:
+        bir alacağı verip tahsil edince bakiye anapara kadar şişiyor, kredili
+        alışverişte çift gider sayılıyordu.
+
+        islem_olustur=True verilirse (kullanıcının bilinçli tercihi) ödeme
+        ayrıca bir gelir/gider işlemi olarak da kaydedilir — ör. "borcu maaşımdan
+        ödedim, bunu harcama defterime de işle" senaryosu.
         """
         odeme = para_yuvarla(odeme_tutar)
         tarih_iso = normalize_date(tarih)
@@ -1462,6 +1500,34 @@ class Database:
         # SELECT * kullanici_id'yi de içerir; kolonlar 9 isimle sınırlı
         # olduğu için zip onu otomatik düşürür.
         return [dict(zip(kolonlar, satir)) for satir in self.cursor.fetchall()]
+
+    def borc_net_pozisyon(self) -> Dict[str, float]:
+        """Aktif kullanıcının borç/alacak net pozisyonunu döner.
+
+        Borç/alacak ana bakiyeye karışmaz (bilanço kalemi); bu metot ayrı
+        bir özet sağlar:
+          - alacak: başkalarının sana borçlu olduğu kalan toplam
+          - borc:   senin başkalarına borçlu olduğun kalan toplam
+          - net:    alacak - borc (pozitif = net alacaklısın)
+        Kapanmış (kalan=0) kayıtlar toplama katkı vermez.
+        """
+        self.cursor.execute(
+            "SELECT tur, IFNULL(SUM(kalan_tutar), 0) FROM borclar "
+            "WHERE kullanici_id=? GROUP BY tur",
+            (self.aktif_kullanici_id,),
+        )
+        alacak = 0.0
+        borc = 0.0
+        for tur, toplam in self.cursor.fetchall():
+            if tur == "Alacak":
+                alacak = float(toplam)
+            elif tur == "Borç":
+                borc = float(toplam)
+        return {
+            "alacak": para_yuvarla(alacak),
+            "borc": para_yuvarla(borc),
+            "net": para_yuvarla(alacak - borc),
+        }
 
     def yaklasan_borclar(self, gun_esigi: int = 3) -> List[Dict[str, Any]]:
         """Vadesi gun_esigi gün içinde olan veya geçmiş aktif borçları döner

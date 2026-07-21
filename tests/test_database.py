@@ -180,21 +180,46 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(self.db.borc_odemeleri(borc_id), [])
 
     def test_borc_fazla_odeme_kirpilir(self):
-        """Kalanı aşan ödeme hem işleme hem geçmişe kırpılmış yazılmalı."""
+        """Kalanı aşan ödeme geçmişe kırpılmış yazılmalı."""
         borc_id = self.db.borc_ekle(
             "Borç", "Kredi", "Banka", 1000, 100, "01.07.2026", "01.12.2026"
         )
-        # Kalan 100 TL iken 5000 girilirse yalnızca 100 işlenmeli
-        self.db.borc_odeme_yap(borc_id, 5000, "15.07.2026")
+        # Kalan 100 TL iken 5000 girilse bile geçmişe yalnızca 100 yazılmalı;
+        # islem_olustur=True verildiğinde işlem de 100'e kırpılmalı (4900 değil)
+        self.db.borc_odeme_yap(borc_id, 5000, "15.07.2026", islem_olustur=True)
 
         odemeler = self.db.borc_odemeleri(borc_id)
         self.assertEqual(len(odemeler), 1)
         self.assertEqual(odemeler[0]["tutar"], 100.0)
-        # Bakiyeye de yalnızca 100 TL gider yansımalı (4900 TL fazla düşmemeli)
         self.assertEqual(self.db.toplam_gider(), 100.0)
         borc = self.db.borclari_listele("Tümü")[0]
         self.assertEqual(borc["kalan_tutar"], 0.0)
         self.assertEqual(borc["durum"], "Ödendi")
+
+    def test_borc_odeme_bakiyeye_dokunmaz(self):
+        """Model B: ödeme varsayılan olarak bakiyeye/gider'e yansımamalı."""
+        borc_id = self.db.borc_ekle(
+            "Borç", "Kredi", "Banka", 1000, 1000, "01.07.2026", "01.12.2026"
+        )
+        self.db.borc_odeme_yap(borc_id, 400, "15.07.2026")  # varsayılan kapalı
+
+        # Bakiye/gider ETKİLENMEMELİ (çift sayım yok)
+        self.assertEqual(self.db.toplam_gider(), 0.0)
+        self.assertEqual(self.db.bakiye(), 0.0)
+        # Ama borç durumu güncellenmiş ve geçmişe yazılmış olmalı
+        self.assertEqual(len(self.db.borc_odemeleri(borc_id)), 1)
+        self.assertEqual(self.db.borclari_listele("Tümü")[0]["kalan_tutar"], 600.0)
+
+    def test_borc_net_pozisyon(self):
+        """Net pozisyon: alacak - borç, tablo filtresinden bağımsız."""
+        self.db.borc_ekle("Alacak", "Mehmet'e", "Mehmet", 5000, 5000,
+                          "01.07.2026", "01.12.2026")
+        self.db.borc_ekle("Borç", "Bankaya", "Banka", 2000, 2000,
+                          "01.07.2026", "01.12.2026")
+        poz = self.db.borc_net_pozisyon()
+        self.assertEqual(poz["alacak"], 5000.0)
+        self.assertEqual(poz["borc"], 2000.0)
+        self.assertEqual(poz["net"], 3000.0)
 
     def test_borc_sil_odemeleri_de_siler(self):
         """Borç silinince ödeme geçmişi yetim kalmamalı."""
@@ -739,11 +764,12 @@ class DatabaseTests(unittest.TestCase):
         )
 
     def test_borc_odeme_yap(self):
-        """Borç ödemesi kalanı düşürüp gider işlemi üretmeli (#10)."""
+        """Ödeme kalanı düşürür; islem_olustur=True ise gider işlemi de üretir."""
         borc_id = self.db.borc_ekle(
             "Borç", "Kredi Kartı", "Banka", 10000, 10000, "01.06.2026", "01.12.2026"
         )
-        self.db.borc_odeme_yap(borc_id, 3000, "15.07.2026")
+        # Bilinçli tercihle işlem de oluştur
+        self.db.borc_odeme_yap(borc_id, 3000, "15.07.2026", islem_olustur=True)
 
         borc = self.db.borclari_listele("Aktif")[0]
         self.assertEqual(borc["kalan_tutar"], 7000.0)
@@ -753,9 +779,35 @@ class DatabaseTests(unittest.TestCase):
         gecmis = self.db.borc_odemeleri(borc_id)
         self.assertEqual(len(gecmis), 1)
 
-        # Tam ödeme → Ödendi
+        # Tam ödeme → Ödendi (varsayılan: işlem üretmeden)
         self.db.borc_odeme_yap(borc_id, 7000, "20.07.2026")
         self.assertEqual(len(self.db.borclari_listele("Ödendi")), 1)
+
+    def test_borc_bakiye_ayirma_migrasyonu(self):
+        """v4 DB'deki eski borc-odeme işlemleri bakiyeden temizlenmeli."""
+        eski_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(eski_dir.cleanup)
+        eski_yol = Path(eski_dir.name) / "v4.db"
+
+        db_module.DB_PATH = eski_yol
+        hazir = db_module.Database()
+        # Eski model: borc-odeme etiketli bir Gider ve normal bir Gider
+        hazir.conn.execute(
+            "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
+            "etiketler, kullanici_id) VALUES "
+            "('2026-07-01','Gider','Borç/Alacak','Borç ödemesi',500,'borc-odeme',1),"
+            "('2026-07-02','Gider','Market','Alışveriş',200,'',1)"
+        )
+        hazir.conn.execute("PRAGMA user_version=4")
+        hazir.conn.commit()
+        hazir.close()
+
+        yeni = db_module.Database()
+        self.addCleanup(yeni.close)
+        yeni.oturum_ac(1)
+        # borc-odeme işlemi silinmiş, normal gider kalmış olmalı
+        self.assertEqual(yeni.toplam_gider(), 200.0)
+        self.assertEqual(yeni.migrate_silinen_borc_islem, 1)
 
     def test_borc_tarih_normalize(self):
         """Borç tarihleri ISO'ya normalize edilip doğru sıralanmalı (#18)."""

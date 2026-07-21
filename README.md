@@ -218,6 +218,14 @@ FINEding/
 
 ---
 
+## 🤝 Katkı & Güvenlik
+
+- Katkı vermek istersen: [CONTRIBUTING.md](CONTRIBUTING.md) (kod dışı katkılar da dahil)
+- Sürüm geçmişi: [CHANGELOG.md](CHANGELOG.md)
+- Güvenlik açığı bildirimi: [SECURITY.md](SECURITY.md)
+
+---
+
 ## 📄 Lisans
 
 [MIT](LICENSE) — Dilediğin gibi kullan, değiştir, paylaş.

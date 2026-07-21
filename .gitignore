@@ -11,6 +11,9 @@ __pycache__/
 build/
 dist/
 *.spec
+# Derleme yapılandırması (hiddenimports vb.) sürüm kontrolünde tutulur ki
+# temiz klonda exe eksiksiz derlensin — genel *.spec kuralına istisna.
+!FINEding.spec
 *.db
 *.db-*
 *.sqlite3

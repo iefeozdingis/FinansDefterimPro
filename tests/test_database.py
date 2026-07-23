@@ -1182,5 +1182,191 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(veri_dict["2026"][0], 4000.0)
 
 
+class KurusParaTests(unittest.TestCase):
+    """Para v7'den itibaren kuruş bazlı INTEGER saklanır (1 TL = 100).
+
+    Bu testler üç şeyi korur: (1) depolama gerçekten tam sayı kuruştur ve
+    float birikim hatası oluşmaz; (2) public API lira-float sözleşmesi
+    değişmeden round-trip eder; (3) iç kopya/aktarım yolları değeri 100 kat
+    şişirmez; (4) eski (REAL/lira) DB'ler v6→v7 ile değer kaybı olmadan
+    çevrilir.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        db_module.DB_FOLDER = Path(self.temp_dir.name)
+        db_module.DB_PATH = db_module.DB_FOLDER / "test_kurus.db"
+        self.db = db_module.Database()
+
+    def tearDown(self):
+        self.db.close()
+        self.temp_dir.cleanup()
+
+    def _ham(self, sql):
+        """DB sınırını atlayıp ham (kuruş) sütun değerini okur."""
+        return self.db.conn.execute(sql).fetchall()
+
+    def test_taze_db_tutar_integer_kurus_saklar(self):
+        self.db.gelir_ekle("01.01.2026", "Maaş", "x", 19.99)
+        # Public API lira döner (sözleşme değişmez)
+        self.assertEqual(self.db.tum_islemler()[0][5], 19.99)
+        # Depolama gerçek INTEGER kuruş (taze kurulum INTEGER afiniteli)
+        tip, deger = self._ham("SELECT typeof(tutar), tutar FROM islemler")[0]
+        self.assertEqual(tip, "integer")
+        self.assertEqual(deger, 1999)
+
+    def test_float_birikim_kesinligi(self):
+        # Klasik 0.1 problemi: REAL'de 3×0.10 birikimi 0.30000000000000004.
+        for _ in range(3):
+            self.db.gider_ekle("01.01.2026", "Test", "x", 0.10)
+        self.assertEqual(
+            [r[0] for r in self._ham("SELECT tutar FROM islemler")],
+            [10, 10, 10],
+        )
+        # Tam sayı kuruşta SUM tam kesin
+        self.assertEqual(self._ham("SELECT SUM(tutar) FROM islemler")[0][0], 30)
+        self.assertEqual(self.db.toplam_gider(), 0.30)
+
+    def test_lira_roundtrip_tum_tablolar(self):
+        self.db.gelir_ekle("01.01.2026", "Maaş", "x", 1234.56)
+        self.db.kaydet_butce(1, 2026, "Yemek", 750.25)
+        self.db.planlanan_ekle(1, 2026, "Kira", "Gider", "x", 1500.50)
+        self.db.tekrarlayan_ekle("Gider", "Abonelik", "x", 49.90, 1)
+        self.db.borc_ekle("Borç", "x", "p", 100.00, 100.00, "", "")
+        self.db.tasarruf_hedefi_ekle("Araba", 25000.00)
+        self.assertEqual(self.db.tum_islemler()[0][5], 1234.56)
+        self.assertEqual(self.db.butce_listele(1, 2026)[0][1], 750.25)
+        self.assertEqual(self.db.planlanan_listele(1, 2026)[0][6], 1500.50)
+        self.assertEqual(self.db.tekrarlayan_listele()[0]["tutar"], 49.90)
+        self.assertEqual(
+            self.db.borclari_listele("Tümü")[0]["kalan_tutar"], 100.00
+        )
+        self.assertEqual(
+            self.db.tasarruf_hedefleri_listele()[0]["hedef_tutar"], 25000.00
+        )
+
+    def test_planlanan_kopyala_kurus_sismaz(self):
+        self.db.planlanan_ekle(1, 2026, "Kira", "Gider", "x", 1500.50)
+        self.db.planlanan_kopyala(1, 2026, 2, 2026)
+        # 150050.0 (100×) DEĞİL, 1500.50 olmalı
+        self.assertEqual(self.db.planlanan_listele(2, 2026)[0][6], 1500.50)
+        self.assertEqual(
+            self._ham("SELECT tutar FROM planlanan WHERE ay=2")[0][0], 150050
+        )
+
+    def test_plani_aktar_kurus_sismaz(self):
+        self.db.planlanan_ekle(1, 2026, "Kira", "Gider", "x", 1500.50)
+        self.db.plani_aktar(1, 2026, "15.01.2026")
+        islem = [x for x in self.db.tum_islemler() if x[3] == "Kira"][0]
+        self.assertEqual(islem[5], 1500.50)
+
+    def test_tekrarlayan_isle_kurus_sismaz(self):
+        from datetime import date
+        self.db.tekrarlayan_ekle(
+            "Gider", "Abonelik", "x", 49.90, 1, bugun=date(2025, 12, 20)
+        )
+        eklenen = self.db.tekrarlayan_isle(bugun=date(2026, 1, 15))
+        self.assertTrue(eklenen)
+        self.assertEqual(eklenen[0]["tutar"], 49.90)  # bildirim lira
+        islem = [x for x in self.db.tum_islemler() if x[3] == "Abonelik"][0]
+        self.assertEqual(islem[5], 49.90)
+
+    def test_butce_kopyala_kurus_sismaz(self):
+        self.db.kaydet_butce(1, 2026, "Yemek", 750.25)
+        self.db.butce_kopyala(1, 2026, 2, 2026)
+        self.assertEqual(self.db.butce_listele(2, 2026)[0][1], 750.25)
+
+    def test_borc_odeme_kurus_kesin(self):
+        bid = self.db.borc_ekle("Borç", "x", "p", 100.00, 100.00, "", "")
+        # 33.33 + 33.33 + 33.34 = 100.00 tam (float'ta kayabilirdi)
+        for tutar in (33.33, 33.33, 33.34):
+            self.db.borc_odeme_yap(bid, tutar, "01.01.2026")
+        b = self.db.borclari_listele("Tümü")[0]
+        self.assertEqual(b["kalan_tutar"], 0.0)
+        self.assertEqual(b["durum"], "Ödendi")
+        self.assertEqual(
+            self._ham("SELECT kalan_tutar FROM borclar")[0][0], 0
+        )
+
+    def test_tasarruf_katki_kurus_kesin(self):
+        hid = self.db.tasarruf_hedefi_ekle("Kumbara", 100.00)
+        self.db.tasarruf_katki_ekle(hid, 33.33, islem_olustur=False)
+        self.db.tasarruf_katki_ekle(hid, 66.67, islem_olustur=False)
+        self.assertEqual(
+            self.db.tasarruf_hedefleri_listele()[0]["biriken_tutar"], 100.00
+        )
+
+    def test_v6_to_v7_migrasyon_deger_korur(self):
+        """Eski REAL/lira DB açılınca değerler kuruşa çevrilir, kayıp olmaz."""
+        import sqlite3
+        yol = db_module.DB_FOLDER / "eski_v6.db"
+        con = sqlite3.connect(yol)
+        con.executescript(
+            """
+            CREATE TABLE islemler(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, tarih TEXT NOT NULL,
+                tur TEXT NOT NULL, kategori TEXT NOT NULL, aciklama TEXT,
+                tutar REAL NOT NULL, etiketler TEXT DEFAULT '',
+                kullanici_id INTEGER DEFAULT 1);
+            CREATE TABLE borclar(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, tur TEXT NOT NULL,
+                aciklama TEXT NOT NULL, kisi TEXT, toplam_tutar REAL NOT NULL,
+                kalan_tutar REAL NOT NULL, baslangic_tarih TEXT,
+                vade_tarih TEXT, durum TEXT NOT NULL DEFAULT 'Aktif',
+                kullanici_id INTEGER DEFAULT 1);
+            """
+        )
+        con.execute(
+            "INSERT INTO islemler (tarih,tur,kategori,aciklama,tutar,"
+            "kullanici_id) VALUES ('2026-01-01','Gelir','Maaş','x',19.99,1)"
+        )
+        con.execute(
+            "INSERT INTO islemler (tarih,tur,kategori,aciklama,tutar,"
+            "kullanici_id) VALUES ('2026-01-02','Gider','Yemek','y',0.01,1)"
+        )
+        con.execute(
+            "INSERT INTO borclar (tur,aciklama,kisi,toplam_tutar,kalan_tutar,"
+            "durum,kullanici_id) VALUES ('Borç','k','p',1234.56,1234.56,"
+            "'Aktif',1)"
+        )
+        con.execute("PRAGMA user_version=6")
+        con.commit()
+        con.close()
+
+        onceki = db_module.DB_PATH
+        db_module.DB_PATH = yol
+        try:
+            m = db_module.Database()
+            # Sürüm yükseldi
+            self.assertEqual(
+                m.conn.execute("PRAGMA user_version").fetchone()[0],
+                db_module.SCHEMA_VERSION,
+            )
+            # Değerler lira olarak korunur (public API)
+            self.assertEqual(
+                sorted(i[5] for i in m.tum_islemler()), [0.01, 19.99]
+            )
+            self.assertEqual(
+                m.borclari_listele("Tümü")[0]["kalan_tutar"], 1234.56
+            )
+            # Depolama tam sayı kuruşa çevrildi (değer bazında)
+            self.assertEqual(
+                sorted(
+                    r[0]
+                    for r in m.conn.execute("SELECT tutar FROM islemler")
+                ),
+                [1, 1999],
+            )
+            self.assertEqual(
+                m.conn.execute(
+                    "SELECT kalan_tutar FROM borclar"
+                ).fetchone()[0],
+                123456,
+            )
+            m.close()
+        finally:
+            db_module.DB_PATH = onceki
+
+
 if __name__ == "__main__":
     unittest.main()

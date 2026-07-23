@@ -3,6 +3,23 @@
 Tüm önemli değişiklikler bu dosyada tutulur. Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/)
 esas alır; sürümleme [Semantic Versioning](https://semver.org/lang/tr/).
 
+## [1.8.0] - 2026-07-23
+
+Para artık kuruş bazlı tam sayı saklanıyor. Test sayısı 107 → 117.
+
+### Değişti
+
+- **Para birimi tam sayı kuruşa taşındı (v7 migrasyonu).** Tüm tutar
+  sütunları (`islemler`, `butceler`, `planlanan`, `borclar`, `tekrarlayan`,
+  `borc_odemeler`, `tasarruf_hedefleri`) `REAL`(lira) yerine artık
+  `INTEGER`(kuruş) — 1 TL = 100. Float saklama `0.1 + 0.2 =
+  0.30000000000000004` sınıfı birikimli yuvarlama hatalarına ve çok satırlı
+  `SUM` kaymasına açıktı; tam sayı kuruş depolamayı ve toplamayı **tam
+  kesin** yapar. Eski (REAL/lira) veritabanları açılışta otomatik ve kayıpsız
+  çevrilir. Arayüz sözleşmesi değişmez: DB sınırında lira'ya çevrildiği için
+  ekranlar, içe/dışa aktarım ve tüm hesaplamalar aynı çalışır. Bu, çoklu para
+  birimi (her biri minör birimde tam sayı) için de zemin hazırlar.
+
 ## [1.7.0] - 2026-07-22
 
 Kapsamlı bir denetim ve sağlamlaştırma turu. Test sayısı 61 → 107.
@@ -76,6 +93,7 @@ Kapsamlı bir denetim ve sağlamlaştırma turu. Test sayısı 61 → 107.
 
 - Hata düzeltmeleri ve kararlılık güncellemeleri.
 
+[1.8.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.8.0
 [1.7.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.7.0
 [1.6.2]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.6.2
 [1.6.1]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.6.1

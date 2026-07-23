@@ -127,14 +127,38 @@ def csv_guvenli(deger: Any) -> Any:
     return deger
 
 
-def para_yuvarla(tutar: Any) -> float:
-    """Tutarı 2 ondalık haneye yuvarlar (kuruş).
+def para_kurus(lira: Any) -> int:
+    """Lira-float değerini tam sayı KURUŞ'a çevirir — YAZMA sınırı.
 
-    Para REAL (float) saklandığı için 0.1+0.2 sınıfı birikimli yuvarlama
-    hataları oluşabiliyor; tüm yazma noktalarında bilinçli yuvarlama
-    uygulanarak bakiye/bütçe karşılaştırmaları tutarlı tutulur.
+    Para artık DB'de kuruş bazlı INTEGER saklanır. Önceden REAL (float)
+    saklandığı için 0.1+0.2 sınıfı birikimli yuvarlama hataları ve çok
+    satırlı SUM kayması oluşabiliyordu; kuruş tam sayısı bu sınıfı kökten
+    bitirir ve çoklu para birimi (minör birim = tam sayı) için zemin hazırlar.
+
+    Kullanıcı girdisi (para_parse) en fazla 2 ondalık ürettiği için
+    tutar*100 matematiksel olarak tam sayıdır; round() yalnızca float
+    gösterim gürültüsünü (ör. 19.99*100=1998.9999…) temizler.
     """
-    return round(float(tutar), 2)
+    return int(round(float(lira) * 100))
+
+
+def para_lira(kurus: Any) -> float:
+    """Tam sayı kuruşu lira-float'a çevirir — OKUMA sınırı.
+
+    Public API (UI'ye bakan) lira-float döner; depolama kuruş olsa da
+    arayüz sözleşmesi değişmez. Saklanan değer tam olduğundan (tam sayı
+    kuruş) yalnızca gösterim için buradan float'a dönülür.
+    """
+    return (kurus or 0) / 100
+
+
+# islemler tablosu için okuma projeksiyonu. tutar KURUŞ (INTEGER) saklanır;
+# okuma sınırında lira'ya (÷100.0) çevrilir. Kolon SIRASI create_tables ile
+# birebir aynıdır (UI indeksleri islem[5]=tutar'a dayanır). Sabit literaldir,
+# enjeksiyon riski yoktur.
+_ISLEM_SECIM = (
+    "id, tarih, tur, kategori, aciklama, tutar/100.0, etiketler, kullanici_id"
+)
 
 
 def normalize_date(tarih_str: str) -> str:
@@ -160,7 +184,7 @@ def normalize_date(tarih_str: str) -> str:
 
 
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Geri-al yığınında en fazla kaç silme partisi tutulur
 GERI_AL_YIGIN_SINIRI = 20
@@ -257,6 +281,8 @@ class Database:
             self._migrate_borc_bakiyeden_ayir()
         if mevcut < 6:
             self._migrate_borc_odemeler_fk()
+        if mevcut < 7:
+            self._migrate_kurus_tam_sayi()
         if mevcut < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.conn.commit()
@@ -365,6 +391,49 @@ class Database:
             raise
         finally:
             self.conn.execute("PRAGMA foreign_keys=ON")
+
+    def _migrate_kurus_tam_sayi(self) -> None:
+        """v7: Para REAL(lira) → INTEGER(kuruş). Her para sütununu 100 ile
+        çarpıp tam sayıya yuvarlar (1 TL = 100 kuruş).
+
+        Amaç: depolama ve SUM tam kesinlik kazansın; 0.1+0.2 sınıfı float
+        birikim hataları bitsin; çoklu para birimi (minör birim = tam sayı)
+        için zemin hazırlansın. Yeni kurulumlar zaten INTEGER şemayla açılır;
+        bu adım yalnızca eski (REAL/lira) veritabanlarındaki değerleri çevirir.
+
+        Not: Eski DB'lerde sütun AFİNİTESİ REAL kalır (SQLite'ta afinite
+        rebuild olmadan değişmez) ama artık tam sayı kuruş tutar — bu
+        değerler 2^53'e kadar float'ta da tam temsil edildiğinden depolama ve
+        toplama kesin kalır. Tüm yazmalar para_kurus'tan geçtiği için bir daha
+        kesirli değer yazılamaz. Çekirdek tabloları (islemler dahil) marjinal
+        bir afinite kozmetiği için yeniden kurmak orantısız risk taşıdığından
+        değerler yerinde çevrilir.
+        """
+        donusumler = [
+            ("islemler", ("tutar",)),
+            ("butceler", ("tutar",)),
+            ("planlanan", ("tutar",)),
+            ("borclar", ("toplam_tutar", "kalan_tutar")),
+            ("tekrarlayan", ("tutar",)),
+            ("borc_odemeler", ("tutar",)),
+            ("tasarruf_hedefleri", ("hedef_tutar", "biriken_tutar")),
+        ]
+        for tablo, kolonlar in donusumler:
+            var = self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (tablo,),
+            ).fetchone()
+            if not var:
+                continue  # tablo yok (kısmi/eski kurulum) — create_tables halleder
+            for kolon in kolonlar:
+                # CAST(ROUND(x*100)) — 19.99 gibi kayan değerlerdeki gösterim
+                # gürültüsünü (1998.9999…) yuvarlayıp tam kuruşa oturtur.
+                self.conn.execute(
+                    f"UPDATE {tablo} SET {kolon} = "
+                    f"CAST(ROUND({kolon} * 100) AS INTEGER) "
+                    f"WHERE {kolon} IS NOT NULL"
+                )
+        self.conn.commit()
 
     def _migrate_borc_bakiyeden_ayir(self) -> None:
         """v5: borç/alacağı ana bakiyeden ayır (muhasebe modeli B).
@@ -509,6 +578,11 @@ class Database:
         atlanan/kesilen bir kurulumda tüm sorgular 'no such column' ile
         patlıyordu ve şemayı okuyan geliştirici eksik bir tablo görüyordu.
         """
+        # PARA BİRİMİ: Tüm tutar sütunları INTEGER ve KURUŞ cinsindendir
+        # (1 TL = 100). REAL(lira) float birikim/SUM hatalarına yol açıyordu;
+        # kuruş tam sayısı depolama ve toplamayı tam kesin yapar. DB sınırında
+        # para_kurus (yaz) / para_lira (oku) ile lira-float'a çevrilir; public
+        # API ve UI değişmeden lira ile çalışmaya devam eder.
         self.cursor.execute("""
         CREATE TABLE IF NOT EXISTS islemler(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -516,7 +590,7 @@ class Database:
             tur TEXT NOT NULL,
             kategori TEXT NOT NULL,
             aciklama TEXT,
-            tutar REAL NOT NULL,
+            tutar INTEGER NOT NULL,
             etiketler TEXT DEFAULT '',
             kullanici_id INTEGER DEFAULT 1
         )
@@ -528,7 +602,7 @@ class Database:
             ay INTEGER NOT NULL,
             yil INTEGER NOT NULL,
             kategori TEXT NOT NULL,
-            tutar REAL NOT NULL,
+            tutar INTEGER NOT NULL,
             kullanici_id INTEGER DEFAULT 1,
             UNIQUE(ay, yil, kategori, kullanici_id)
         )
@@ -549,7 +623,7 @@ class Database:
             kategori TEXT NOT NULL,
             tur TEXT NOT NULL,
             aciklama TEXT,
-            tutar REAL NOT NULL,
+            tutar INTEGER NOT NULL,
             aktarim_tarihi TEXT DEFAULT '',
             kullanici_id INTEGER DEFAULT 1
         )
@@ -561,8 +635,8 @@ class Database:
             tur TEXT NOT NULL,
             aciklama TEXT NOT NULL,
             kisi TEXT,
-            toplam_tutar REAL NOT NULL,
-            kalan_tutar REAL NOT NULL,
+            toplam_tutar INTEGER NOT NULL,
+            kalan_tutar INTEGER NOT NULL,
             baslangic_tarih TEXT,
             vade_tarih TEXT,
             durum TEXT NOT NULL DEFAULT 'Aktif',
@@ -589,7 +663,7 @@ class Database:
             tur TEXT NOT NULL,
             kategori TEXT NOT NULL,
             aciklama TEXT,
-            tutar REAL NOT NULL,
+            tutar INTEGER NOT NULL,
             gun INTEGER NOT NULL,
             aktif INTEGER NOT NULL DEFAULT 1,
             son_islenen_donem TEXT DEFAULT '',
@@ -617,7 +691,7 @@ class Database:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             borc_id INTEGER NOT NULL,
             tarih TEXT NOT NULL,
-            tutar REAL NOT NULL,
+            tutar INTEGER NOT NULL,
             FOREIGN KEY (borc_id) REFERENCES borclar(id) ON DELETE CASCADE
         )
         """)
@@ -627,8 +701,8 @@ class Database:
         CREATE TABLE IF NOT EXISTS tasarruf_hedefleri(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ad TEXT NOT NULL,
-            hedef_tutar REAL NOT NULL,
-            biriken_tutar REAL NOT NULL DEFAULT 0,
+            hedef_tutar INTEGER NOT NULL,
+            biriken_tutar INTEGER NOT NULL DEFAULT 0,
             hedef_tarih TEXT,
             kullanici_id INTEGER DEFAULT 1
         )
@@ -667,7 +741,7 @@ class Database:
         VALUES (?,?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gelir", kategori, aciklama, para_yuvarla(tutar),
+            (tarih_iso, "Gelir", kategori, aciklama, para_kurus(tutar),
              etiketler, self.aktif_kullanici_id),
         )
         self._log_islem("gelir_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
@@ -690,7 +764,7 @@ class Database:
         VALUES (?,?,?,?,?,?,?)
 
         """,
-            (tarih_iso, "Gider", kategori, aciklama, para_yuvarla(tutar),
+            (tarih_iso, "Gider", kategori, aciklama, para_kurus(tutar),
              etiketler, self.aktif_kullanici_id),
         )
         self._log_islem("gider_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
@@ -702,7 +776,8 @@ class Database:
 
     def tum_islemler(self) -> List[Tuple[Any, ...]]:
         self.cursor.execute(
-            "SELECT * FROM islemler WHERE kullanici_id=? ORDER BY id DESC",
+            f"SELECT {_ISLEM_SECIM} FROM islemler WHERE kullanici_id=? "
+            "ORDER BY id DESC",
             (self.aktif_kullanici_id,),
         )
         return self.cursor.fetchall()
@@ -725,7 +800,7 @@ class Database:
         donem: "" (tümü), "bugun" veya "hafta". Üç filtre BİRLİKTE uygulanır;
         önceden dönem filtresi ayrı bir sorgu yoluydu ve aramayı yok sayıyordu.
         """
-        sorgu = "SELECT * FROM islemler WHERE kullanici_id=?"
+        sorgu = f"SELECT {_ISLEM_SECIM} FROM islemler WHERE kullanici_id=?"
         params: List[Any] = [self.aktif_kullanici_id]
         if donem == "bugun":
             from datetime import date
@@ -742,7 +817,7 @@ class Database:
         if arama:
             sorgu += (
                 " AND (kategori LIKE ? ESCAPE '\\' OR aciklama LIKE ? ESCAPE '\\'"
-                " OR CAST(tutar AS TEXT) LIKE ? ESCAPE '\\'"
+                " OR printf('%.2f', tutar/100.0) LIKE ? ESCAPE '\\'"
                 " OR etiketler LIKE ? ESCAPE '\\')"
             )
             # Kullanıcının yazdığı % ve _ joker karakter olarak yorumlanmasın
@@ -770,7 +845,7 @@ class Database:
         etiketler: Optional[str] = None,
     ) -> None:
         tarih_iso = normalize_date(tarih)
-        tutar = para_yuvarla(tutar)
+        tutar = para_kurus(tutar)
         uid = self.aktif_kullanici_id
         if etiketler is None:
             self.cursor.execute(
@@ -797,8 +872,8 @@ class Database:
         bas_iso = normalize_date(baslangic)
         bit_iso = normalize_date(bitis)
         self.cursor.execute(
-            """
-        SELECT *
+            f"""
+        SELECT {_ISLEM_SECIM}
         FROM islemler
         WHERE kullanici_id=? AND tarih BETWEEN ? AND ?
         ORDER BY id DESC
@@ -820,7 +895,7 @@ class Database:
         )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
-        return float(val)
+        return para_lira(val)
 
     def toplam_gider_aralik(self, baslangic: str, bitis: str) -> float:
         bas_iso = normalize_date(baslangic)
@@ -835,10 +910,12 @@ class Database:
         )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
-        return float(val)
+        return para_lira(val)
 
     def kategori_toplamlari(self, tur: Optional[str] = None) -> List[Tuple[str, float]]:
-        sorgu = "SELECT kategori, SUM(tutar) FROM islemler WHERE kullanici_id=?"
+        sorgu = (
+            "SELECT kategori, SUM(tutar)/100.0 FROM islemler WHERE kullanici_id=?"
+        )
         kosullar: List[Any] = [self.aktif_kullanici_id]
         if tur:
             sorgu += " AND tur=?"
@@ -863,7 +940,10 @@ class Database:
         """,
             (self.aktif_kullanici_id,),
         )
-        return [(r[0], float(r[1]), float(r[2])) for r in self.cursor.fetchall()]
+        return [
+            (r[0], para_lira(r[1]), para_lira(r[2]))
+            for r in self.cursor.fetchall()
+        ]
 
     def export_csv(self, path: str) -> None:
         with open(path, "w", newline="", encoding="utf-8") as dosya:
@@ -993,7 +1073,7 @@ class Database:
         tur = satir.get("tur", "").strip()
         kategori = satir.get("kategori", "").strip()
         aciklama = satir.get("aciklama", "").strip() or None
-        tutar = para_yuvarla(self._tutar_parse(satir.get("tutar", "0")))
+        tutar = para_kurus(self._tutar_parse(satir.get("tutar", "0")))
         etiketler = satir.get("etiketler", "").strip()
         if tur not in ("Gelir", "Gider") or not kategori:
             return 0
@@ -1013,14 +1093,14 @@ class Database:
         ON CONFLICT(ay, yil, kategori, kullanici_id)
             DO UPDATE SET tutar=excluded.tutar
         """,
-            (ay, yil, kategori, para_yuvarla(tutar), self.aktif_kullanici_id),
+            (ay, yil, kategori, para_kurus(tutar), self.aktif_kullanici_id),
         )
         self.conn.commit()
 
     def butce_listele(self, ay: int, yil: int) -> List[Tuple[str, float]]:
         self.cursor.execute(
             """
-        SELECT kategori, tutar FROM butceler
+        SELECT kategori, tutar/100.0 FROM butceler
         WHERE ay=? AND yil=? AND kullanici_id=?
         ORDER BY kategori
         """,
@@ -1075,9 +1155,9 @@ class Database:
             sonuc.append(
                 {
                     "kategori": kategori,
-                    "butce": float(butce),
-                    "harcanan": float(harcanan),
-                    "kalan": float(butce) - float(harcanan),
+                    "butce": para_lira(butce),
+                    "harcanan": para_lira(harcanan),
+                    "kalan": para_lira(int(butce) - int(harcanan)),
                 }
             )
         return sonuc
@@ -1212,7 +1292,7 @@ class Database:
         )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
-        return float(val)
+        return para_lira(val)
 
     # ==========================
     # TOPLAM GİDER
@@ -1226,7 +1306,7 @@ class Database:
         )
         row = self.cursor.fetchone()
         val = row[0] if row and row[0] is not None else 0.0
-        return float(val)
+        return para_lira(val)
 
     # ==========================
     # BAKİYE
@@ -1323,7 +1403,7 @@ class Database:
         self.cursor.execute(
             "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, tutar, "
             "kullanici_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (ay, yil, kategori, tur, aciklama, para_yuvarla(tutar),
+            (ay, yil, kategori, tur, aciklama, para_kurus(tutar),
              self.aktif_kullanici_id),
         )
         self.conn.commit()
@@ -1336,7 +1416,7 @@ class Database:
         self.cursor.execute(
             "UPDATE planlanan SET kategori=?, tur=?, aciklama=?, tutar=? "
             "WHERE id=? AND kullanici_id=?",
-            (kategori, tur, aciklama, para_yuvarla(tutar), id,
+            (kategori, tur, aciklama, para_kurus(tutar), id,
              self.aktif_kullanici_id),
         )
         self.conn.commit()
@@ -1349,9 +1429,12 @@ class Database:
         self.conn.commit()
 
     def planlanan_listele(self, ay: int, yil: int) -> List[Tuple[Any, ...]]:
+        # tutar KURUŞ saklanır → okuma sınırında lira'ya çevrilir. Kolon
+        # SIRASI korunur (UI satir[6]=tutar'a dayanır).
         self.cursor.execute(
-            "SELECT * FROM planlanan WHERE ay=? AND yil=? AND kullanici_id=? "
-            "ORDER BY tur, kategori",
+            "SELECT id, ay, yil, kategori, tur, aciklama, tutar/100.0, "
+            "aktarim_tarihi, kullanici_id FROM planlanan "
+            "WHERE ay=? AND yil=? AND kullanici_id=? ORDER BY tur, kategori",
             (ay, yil, self.aktif_kullanici_id),
         )
         return self.cursor.fetchall()
@@ -1398,11 +1481,13 @@ class Database:
                 )
                 silinen = hedef_dolu
             for kategori, tur, aciklama, tutar in kaynak:
+                # tutar DB'den (kuruş) okundu → aynen taşınır; para_kurus ile
+                # yeniden çevirmek 100 kat şişirir (iç kopya, dönüşümsüz).
                 self.cursor.execute(
                     "INSERT INTO planlanan (ay, yil, kategori, tur, aciklama, "
                     "tutar, kullanici_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (hedef_ay, hedef_yil, kategori, tur, aciklama or "",
-                     para_yuvarla(tutar), uid),
+                     tutar, uid),
                 )
         return {"kopyalanan": len(kaynak), "silinen": silinen}
 
@@ -1431,11 +1516,12 @@ class Database:
                     atlanan += 1
                     continue
                 islem_tur = "Gelir" if tur == "Gelir" else "Gider"
+                # planlanan.tutar zaten kuruş; islemler'e dönüşümsüz aktarılır.
                 self.cursor.execute(
                     "INSERT INTO islemler (tarih, tur, kategori, aciklama, tutar, "
                     "etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
                     (tarih_iso, islem_tur, kategori, aciklama or "",
-                     para_yuvarla(tutar), "plan", uid),
+                     tutar, "plan", uid),
                 )
                 self.cursor.execute(
                     "UPDATE planlanan SET aktarim_tarihi=? "
@@ -1453,7 +1539,7 @@ class Database:
         )
         sonuc = {"Gelir": 0.0, "Gider": 0.0}
         for tur, toplam in self.cursor.fetchall():
-            sonuc[tur] = float(toplam)
+            sonuc[tur] = para_lira(toplam)
         return sonuc
 
     # ==========================
@@ -1479,7 +1565,7 @@ class Database:
             "INSERT INTO borclar (tur, aciklama, kisi, toplam_tutar, "
             "kalan_tutar, baslangic_tarih, vade_tarih, durum, kullanici_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'Aktif', ?)",
-            (tur, aciklama, kisi, para_yuvarla(toplam), para_yuvarla(kalan),
+            (tur, aciklama, kisi, para_kurus(toplam), para_kurus(kalan),
              bas_iso, vade_iso, self.aktif_kullanici_id),
         )
         self.conn.commit()
@@ -1489,7 +1575,7 @@ class Database:
     def borc_guncelle(self, id: int, kalan: float, durum: str) -> None:
         self.cursor.execute(
             "UPDATE borclar SET kalan_tutar=?, durum=? WHERE id=? AND kullanici_id=?",
-            (para_yuvarla(kalan), durum, id, self.aktif_kullanici_id),
+            (para_kurus(kalan), durum, id, self.aktif_kullanici_id),
         )
         self.conn.commit()
 
@@ -1510,7 +1596,9 @@ class Database:
         ayrıca bir gelir/gider işlemi olarak da kaydedilir — ör. "borcu maaşımdan
         ödedim, bunu harcama defterime de işle" senaryosu.
         """
-        odeme = para_yuvarla(odeme_tutar)
+        # Dış girdi (lira) → kuruş; kalan da kuruş okunur, tüm aritmetik tam
+        # sayı kuruşta yürür (float artığı olmadan tam karşılaştırma).
+        odeme = para_kurus(odeme_tutar)
         tarih_iso = normalize_date(tarih)
         uid = self.aktif_kullanici_id
         try:
@@ -1523,13 +1611,13 @@ class Database:
             row = self.cursor.fetchone()
             if row is None:
                 raise ValueError("Borç kaydı bulunamadı")
-            tur, aciklama, kalan = row[0], row[1], float(row[2])
+            tur, aciklama, kalan = row[0], row[1], int(row[2])
             # Kalanı aşan ödeme kırpılır. Önceden yalnızca yeni_kalan
             # max(0,...) ile kırpılıyor, ödemenin kendisi tam haliyle hem
             # islemler'e hem geçmişe yazılıyordu: kalan 100 TL iken 5000
             # girilince bakiye 4900 TL fazla düşüyordu.
-            fiili_odeme = para_yuvarla(min(odeme, kalan)) if odeme > 0 else odeme
-            yeni_kalan = para_yuvarla(max(0.0, kalan - fiili_odeme))
+            fiili_odeme = min(odeme, kalan) if odeme > 0 else odeme
+            yeni_kalan = max(0, kalan - fiili_odeme)
             yeni_durum = "Ödendi" if yeni_kalan <= 0 else "Aktif"
 
             if islem_olustur and fiili_odeme != 0:
@@ -1569,7 +1657,7 @@ class Database:
             (borc_id, self.aktif_kullanici_id),
         )
         return [
-            {"id": r[0], "tarih": r[1], "tutar": float(r[2])}
+            {"id": r[0], "tarih": r[1], "tutar": para_lira(r[2])}
             for r in self.cursor.fetchall()
         ]
 
@@ -1590,15 +1678,20 @@ class Database:
 
     def borclari_listele(self, durum: str = "Aktif") -> List[Dict[str, Any]]:
         uid = self.aktif_kullanici_id
+        # toplam/kalan KURUŞ saklanır → okuma sınırında lira'ya (÷100.0)
+        # çevrilir. Açık kolon listesi kullanici_id'yi zaten dışarıda bırakır.
+        secim = (
+            "SELECT id, tur, aciklama, kisi, toplam_tutar/100.0, "
+            "kalan_tutar/100.0, baslangic_tarih, vade_tarih, durum FROM borclar"
+        )
         if durum == "Tümü":
             self.cursor.execute(
-                "SELECT * FROM borclar WHERE kullanici_id=? ORDER BY vade_tarih",
+                f"{secim} WHERE kullanici_id=? ORDER BY vade_tarih",
                 (uid,),
             )
         else:
             self.cursor.execute(
-                "SELECT * FROM borclar WHERE durum=? AND kullanici_id=? "
-                "ORDER BY vade_tarih",
+                f"{secim} WHERE durum=? AND kullanici_id=? ORDER BY vade_tarih",
                 (durum, uid),
             )
         kolonlar = [
@@ -1612,8 +1705,6 @@ class Database:
             "vade_tarih",
             "durum",
         ]
-        # SELECT * kullanici_id'yi de içerir; kolonlar 9 isimle sınırlı
-        # olduğu için zip onu otomatik düşürür.
         return [dict(zip(kolonlar, satir)) for satir in self.cursor.fetchall()]
 
     def borc_net_pozisyon(self) -> Dict[str, float]:
@@ -1631,17 +1722,17 @@ class Database:
             "WHERE kullanici_id=? GROUP BY tur",
             (self.aktif_kullanici_id,),
         )
-        alacak = 0.0
-        borc = 0.0
+        alacak = 0  # kuruş
+        borc = 0  # kuruş
         for tur, toplam in self.cursor.fetchall():
             if tur == "Alacak":
-                alacak = float(toplam)
+                alacak = int(toplam)
             elif tur == "Borç":
-                borc = float(toplam)
+                borc = int(toplam)
         return {
-            "alacak": para_yuvarla(alacak),
-            "borc": para_yuvarla(borc),
-            "net": para_yuvarla(alacak - borc),
+            "alacak": para_lira(alacak),
+            "borc": para_lira(borc),
+            "net": para_lira(alacak - borc),
         }
 
     def yaklasan_borclar(self, gun_esigi: int = 3) -> List[Dict[str, Any]]:
@@ -1671,7 +1762,7 @@ class Database:
             (durum, self.aktif_kullanici_id),
         )
         row = self.cursor.fetchone()
-        return float(row[0]) if row else 0.0
+        return para_lira(row[0]) if row else 0.0
 
     # ==========================
     # KULLANICI İŞLEMLERİ
@@ -1943,7 +2034,7 @@ class Database:
         self.cursor.execute(
             "INSERT INTO tekrarlayan (tur, kategori, aciklama, tutar, gun, "
             "son_islenen_donem, kullanici_id) VALUES (?,?,?,?,?,?,?)",
-            (tur, kategori, aciklama, para_yuvarla(tutar), gun, son_donem,
+            (tur, kategori, aciklama, para_kurus(tutar), gun, son_donem,
              self.aktif_kullanici_id),
         )
         self.conn.commit()
@@ -1957,7 +2048,8 @@ class Database:
         return [
             {
                 "id": r[0], "tur": r[1], "kategori": r[2],
-                "aciklama": r[3], "tutar": r[4], "gun": r[5], "aktif": r[6],
+                "aciklama": r[3], "tutar": para_lira(r[4]), "gun": r[5],
+                "aktif": r[6],
             }
             for r in self.cursor.fetchall()
         ]
@@ -2009,11 +2101,12 @@ class Database:
                 for yil, ay in self._islenecek_donemler(son_donem, bugun, gun):
                     gecerli_gun = min(gun, self._ayin_son_gunu(yil, ay))
                     tarih_iso = f"{yil:04d}-{ay:02d}-{gecerli_gun:02d}"
+                    # tekrarlayan.tutar zaten kuruş; dönüşümsüz aktarılır.
                     self.cursor.execute(
                         "INSERT INTO islemler (tarih, tur, kategori, aciklama, "
                         "tutar, etiketler, kullanici_id) VALUES (?,?,?,?,?,?,?)",
                         (tarih_iso, tur, kategori, aciklama or "",
-                         para_yuvarla(tutar), "tekrarlayan", uid),
+                         tutar, "tekrarlayan", uid),
                     )
                     self.cursor.execute(
                         "UPDATE tekrarlayan SET son_islenen_donem=? "
@@ -2022,7 +2115,7 @@ class Database:
                     )
                     eklenenler.append(
                         {"tur": tur, "kategori": kategori,
-                         "tutar": para_yuvarla(tutar)}
+                         "tutar": para_lira(tutar)}  # bildirim için lira
                     )
         return eklenenler
 
@@ -2076,7 +2169,7 @@ class Database:
         self.cursor.execute(
             "INSERT INTO tasarruf_hedefleri (ad, hedef_tutar, biriken_tutar, "
             "hedef_tarih, kullanici_id) VALUES (?, ?, 0, ?, ?)",
-            (ad, para_yuvarla(hedef_tutar), hedef_tarih_iso,
+            (ad, para_kurus(hedef_tutar), hedef_tarih_iso,
              self.aktif_kullanici_id),
         )
         self.conn.commit()
@@ -2091,8 +2184,8 @@ class Database:
         )
         return [
             {
-                "id": r[0], "ad": r[1], "hedef_tutar": float(r[2]),
-                "biriken_tutar": float(r[3]), "hedef_tarih": r[4],
+                "id": r[0], "ad": r[1], "hedef_tutar": para_lira(r[2]),
+                "biriken_tutar": para_lira(r[3]), "hedef_tarih": r[4],
             }
             for r in self.cursor.fetchall()
         ]
@@ -2111,7 +2204,8 @@ class Database:
         bakiyeyle sınırlanır (MAX(0,...) ile para izi kaybını önler).
         """
         from datetime import date
-        katki = para_yuvarla(tutar)
+        # Dış girdi (lira) → kuruş; biriken de kuruş; aritmetik tam sayıda.
+        katki = para_kurus(tutar)
         tarih_iso = normalize_date(tarih) if tarih else date.today().strftime(
             "%Y-%m-%d"
         )
@@ -2128,9 +2222,9 @@ class Database:
             row = self.cursor.fetchone()
             if row is None:
                 raise ValueError("Tasarruf hedefi bulunamadı")
-            ad, biriken = row[0], float(row[1])
-            yeni_biriken = para_yuvarla(max(0.0, biriken + katki))
-            fiili_delta = para_yuvarla(yeni_biriken - biriken)
+            ad, biriken = row[0], int(row[1])
+            yeni_biriken = max(0, biriken + katki)
+            fiili_delta = yeni_biriken - biriken
 
             if islem_olustur and fiili_delta != 0:
                 # Birikime giden para Gider, geri çekilen para Gelir
@@ -2181,7 +2275,7 @@ class Database:
                 (self.aktif_kullanici_id, tur, ay, yil),
             )
             row = self.cursor.fetchone()
-            return float(row[0]) if row else 0.0
+            return para_lira(row[0]) if row else 0.0
 
         return {
             "bu_ay": {"ay": bu_ay, "yil": bu_yil,
@@ -2207,7 +2301,10 @@ class Database:
         """,
             (self.aktif_kullanici_id,),
         )
-        return [(r[0], float(r[1]), float(r[2])) for r in self.cursor.fetchall()]
+        return [
+            (r[0], para_lira(r[1]), para_lira(r[2]))
+            for r in self.cursor.fetchall()
+        ]
 
     # ==========================
     # GÜNLÜK / HAFTALIK FİLTRE
@@ -2217,8 +2314,8 @@ class Database:
         from datetime import date
         bugun = date.today().strftime("%Y-%m-%d")
         self.cursor.execute(
-            "SELECT * FROM islemler WHERE tarih=? AND kullanici_id=? "
-            "ORDER BY id DESC",
+            f"SELECT {_ISLEM_SECIM} FROM islemler WHERE tarih=? "
+            "AND kullanici_id=? ORDER BY id DESC",
             (bugun, self.aktif_kullanici_id),
         )
         return self.cursor.fetchall()
@@ -2229,7 +2326,7 @@ class Database:
         hafta_basi = (bugun - timedelta(days=bugun.weekday())).strftime("%Y-%m-%d")
         bugun_str = bugun.strftime("%Y-%m-%d")
         self.cursor.execute(
-            "SELECT * FROM islemler WHERE tarih BETWEEN ? AND ? "
+            f"SELECT {_ISLEM_SECIM} FROM islemler WHERE tarih BETWEEN ? AND ? "
             "AND kullanici_id=? ORDER BY id DESC",
             (hafta_basi, bugun_str, self.aktif_kullanici_id),
         )

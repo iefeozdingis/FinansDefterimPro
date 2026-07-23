@@ -1368,5 +1368,122 @@ class KurusParaTests(unittest.TestCase):
             db_module.DB_PATH = onceki
 
 
+class CokluParaTests(unittest.TestCase):
+    """Çoklu para birimi (v8): işlem yabancı para biriminde girilebilir.
+
+    Depolama modeli: tutar TL-kuruş (temel/raporlama) KALIR; yabancı işlemin
+    orijinal tutarı + birimi ayrıca saklanır. Böylece bakiye/SUM TL bazında
+    doğru kalır, ekranda hem orijinal hem TL gösterilir.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        db_module.DB_FOLDER = Path(self.temp_dir.name)
+        db_module.DB_PATH = db_module.DB_FOLDER / "test_coklu.db"
+        self.db = db_module.Database()
+
+    def tearDown(self):
+        self.db.close()
+        self.temp_dir.cleanup()
+
+    def _ham(self, sql):
+        return self.db.conn.execute(sql).fetchall()
+
+    def test_try_islem_varsayilan(self):
+        self.db.gelir_ekle("01.01.2026", "Maaş", "x", 1000)
+        i = self.db.tum_islemler()[0]
+        self.assertEqual(i[5], 1000.0)   # TL tutar
+        self.assertEqual(i[8], "TRY")    # para_birimi (index 8)
+        self.assertEqual(i[9], 1000.0)   # orijinal == TL (index 9)
+
+    def test_yabanci_islem_tl_saklanir(self):
+        # 100 USD, kur 34.20 → UI TL'ye çevirip (3420) hem TL hem orijinali verir
+        self.db.gider_ekle(
+            "01.01.2026", "Elektronik", "laptop", 3420.00, "", "USD", 100.00
+        )
+        i = self.db.tum_islemler()[0]
+        self.assertEqual(i[5], 3420.00)   # TL (temel)
+        self.assertEqual(i[8], "USD")
+        self.assertEqual(i[9], 100.00)    # orijinal USD
+        # Raporlama TL bazında — SUM/toplam etkilenmez
+        self.assertEqual(self.db.toplam_gider(), 3420.00)
+        # Depolama kuruş/cent
+        self.assertEqual(
+            self._ham("SELECT tutar, orijinal_tutar FROM islemler")[0],
+            (342000, 10000),
+        )
+
+    def test_guncelle_para_birimi(self):
+        self.db.gelir_ekle("01.01.2026", "Maaş", "x", 1000)
+        i = self.db.tum_islemler()[0]
+        # TL işlemi USD'ye çevir (200 USD @ 34 = 6800 TL)
+        self.db.guncelle_islem(
+            i[0], "02.01.2026", "Gelir", "Maaş", "y", 6800.00, "", "USD", 200.00
+        )
+        j = self.db.tum_islemler()[0]
+        self.assertEqual(j[5], 6800.00)
+        self.assertEqual(j[8], "USD")
+        self.assertEqual(j[9], 200.00)
+
+    def test_undo_para_birimi_korur(self):
+        self.db.gider_ekle(
+            "01.01.2026", "X", "usd", 3420.00, "", "USD", 100.00
+        )
+        i = self.db.tum_islemler()[0]
+        self.db.sil_toplu([i[0]])
+        self.assertEqual(len(self.db.tum_islemler()), 0)
+        self.db.geri_al()
+        j = self.db.tum_islemler()[0]
+        self.assertEqual(j[8], "USD")    # geri alınca USD korunur (TL'ye düşmez)
+        self.assertEqual(j[9], 100.00)
+        self.assertEqual(j[5], 3420.00)
+
+    def test_v7_to_v8_migrasyon(self):
+        """v7 (kuruş, para_birimi kolonu yok) DB → v8 ekler; eski satır TRY."""
+        import sqlite3
+        yol = db_module.DB_FOLDER / "eski_v7.db"
+        con = sqlite3.connect(yol)
+        con.executescript(
+            """
+            CREATE TABLE islemler(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, tarih TEXT NOT NULL,
+                tur TEXT NOT NULL, kategori TEXT NOT NULL, aciklama TEXT,
+                tutar INTEGER NOT NULL, etiketler TEXT DEFAULT '',
+                kullanici_id INTEGER DEFAULT 1);
+            """
+        )
+        # 1500 TL = 150000 kuruş
+        con.execute(
+            "INSERT INTO islemler (tarih,tur,kategori,aciklama,tutar,"
+            "kullanici_id) VALUES ('2026-01-01','Gelir','Maaş','x',150000,1)"
+        )
+        con.execute("PRAGMA user_version=7")
+        con.commit()
+        con.close()
+
+        onceki = db_module.DB_PATH
+        db_module.DB_PATH = yol
+        try:
+            m = db_module.Database()
+            self.assertEqual(
+                m.conn.execute("PRAGMA user_version").fetchone()[0],
+                db_module.SCHEMA_VERSION,
+            )
+            i = m.tum_islemler()[0]
+            self.assertEqual(i[5], 1500.0)    # TL korundu
+            self.assertEqual(i[8], "TRY")     # eski satır TL kabul
+            self.assertEqual(i[9], 1500.0)    # orijinal = tutar
+            # Depolama: orijinal_tutar = tutar (kuruş)
+            self.assertEqual(
+                m.conn.execute(
+                    "SELECT para_birimi, orijinal_tutar FROM islemler"
+                ).fetchone(),
+                ("TRY", 150000),
+            )
+            m.close()
+        finally:
+            db_module.DB_PATH = onceki
+
+
 if __name__ == "__main__":
     unittest.main()

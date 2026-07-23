@@ -3,6 +3,23 @@
 Tüm önemli değişiklikler bu dosyada tutulur. Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.0.0/)
 esas alır; sürümleme [Semantic Versioning](https://semver.org/lang/tr/).
 
+## [1.9.0] - 2026-07-23
+
+Çoklu para birimi desteği (#15). Test sayısı 117 → 132.
+
+### Eklendi
+
+- **Çoklu para birimi (TRY, USD, EUR, GBP).** İşlem eklerken/düzenlerken para
+  birimi seçilebilir; TCMB günlük kuruyla (veya elle girilen kurla) TL
+  karşılığı hesaplanıp dashboard'da hem orijinal hem TL gösterilir. Depolama:
+  `tutar` TL-kuruş (temel/raporlama) olarak saklanır, orijinal tutar + birim
+  ayrıca korunur — böylece bakiye/bütçe/rapor TL bazında değişmeden doğru
+  kalır. Kur kaynağı TCMB `today.xml` (ForexSelling): **Ayarlar ▸ Döviz
+  Kurları**'ndan güncellenir ya da elle girilir, ayrıca günde bir arka planda
+  sessizce tazelenir (çevrimdışıysa son kur/elle kur kullanılır). Ağ çekimi
+  worker thread'de, DB yazımı ana thread'de; yeni bağımlılık yok (urllib +
+  xml.etree). v8 migrasyonu eski işlemleri TRY kabul eder.
+
 ## [1.8.0] - 2026-07-23
 
 Para artık kuruş bazlı tam sayı saklanıyor. Test sayısı 107 → 117.
@@ -93,6 +110,7 @@ Kapsamlı bir denetim ve sağlamlaştırma turu. Test sayısı 61 → 107.
 
 - Hata düzeltmeleri ve kararlılık güncellemeleri.
 
+[1.9.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.9.0
 [1.8.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.8.0
 [1.7.0]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.7.0
 [1.6.2]: https://github.com/iefeozdingis/FINEding/releases/tag/v1.6.2

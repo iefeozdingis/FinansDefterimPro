@@ -68,6 +68,15 @@ class TestParaFormatla(unittest.TestCase):
                 para_parse(para_formatla(deger, sembol=False)), deger, places=2
             )
 
+    def test_para_birimi_sembol(self):
+        # Çoklu para birimi: sembol para_birimi'ne göre değişir, sayı biçimi aynı
+        self.assertEqual(para_formatla(100, para_birimi="USD"), "100,00 $")
+        self.assertEqual(para_formatla(100, para_birimi="EUR"), "100,00 €")
+        self.assertEqual(para_formatla(100, para_birimi="GBP"), "100,00 £")
+        self.assertEqual(para_formatla(100, para_birimi="TRY"), "100,00 ₺")
+        # Varsayılan hâlâ TRY (mevcut çağrılar değişmeden çalışır)
+        self.assertEqual(para_formatla(100), "100,00 ₺")
+
 
 class TestButceDurumEtiketi(unittest.TestCase):
     """Bütçe eşikleri artık render'a gömülü değil, saf fonksiyonda."""

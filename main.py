@@ -8,6 +8,7 @@ from pathlib import Path
 import customtkinter as ctk
 from PIL import Image as PILImage
 
+import kur
 from database import Database, _uygulama_kok
 from ui.money import para_formatla
 from ui.ayarlar import AyarlarSayfasi
@@ -367,11 +368,48 @@ class FinedingApp(ctk.CTk):
     # SAYFA GEÇİŞİ
     # =====================================
 
+    def _kur_arka_plan_tazele(self):
+        """Günde bir, arka planda TCMB kurlarını sessizce tazeler (en iyi çaba).
+
+        Kullanıcı 'TCMB otomatik' seçtiği için kurlar elle güncelleme
+        beklemeden günlük tazelenir. AĞ çekimi worker thread'de yapılır; DB'ye
+        YAZMA ana thread'e after(0) ile marshal edilir (SQLite bağlantısı ana
+        thread'e bağlı). Çevrimdışı/hata durumunda sessizce geçilir — önbellek
+        ya da elle kur kullanılmaya devam eder.
+        """
+        try:
+            onbellek = kur.onbellek_oku(self.db)
+            if onbellek.get("tarih") == datetime.now().strftime("%Y-%m-%d"):
+                return  # bugün zaten tazelendi
+        except Exception:
+            pass
+
+        def isle():
+            try:
+                kurlar = kur.tcmb_getir()
+            except Exception:
+                logger.debug("Arka plan TCMB kur tazeleme başarısız (çevrimdışı?)")
+                return
+            if kurlar:
+                self.after(0, lambda: self._kur_onbellek_yaz(kurlar))
+
+        threading.Thread(target=isle, daemon=True).start()
+
+    def _kur_onbellek_yaz(self, kurlar):
+        """TCMB önbelleğini yazar — ana thread'de (DB güvenliği)."""
+        try:
+            kur.onbellek_kaydet(
+                self.db, kurlar, datetime.now().strftime("%Y-%m-%d")
+            )
+        except Exception:
+            logger.debug("Kur önbelleği yazılamadı")
+
     def _periyodik_kontroller(self):
         """Tekrarlayan işlemleri işler ve yaklaşan borç vadelerini bildirir.
 
         Ana thread üzerinde after() ile çalışır ve kendini yeniden zamanlar.
         """
+        self._kur_arka_plan_tazele()
         try:
             eklenenler = self.db.tekrarlayan_isle()
             for e in eklenenler:

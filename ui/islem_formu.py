@@ -10,7 +10,9 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
+import kur
 from ui import tema
+from ui.money import PARA_BIRIMLERI, para_formatla
 from ui.utils import kategori_listesi, tarih_bind, tutar_bind, tutar_oku
 
 
@@ -72,11 +74,28 @@ class IslemFormuSayfasi(ctk.CTkFrame):
         self.aciklama.pack(pady=8)
 
         self.tutar = ctk.CTkEntry(
-            form, width=380, height=42, placeholder_text="Tutar (₺)",
+            form, width=380, height=42, placeholder_text="Tutar",
             font=("Segoe UI", 14), corner_radius=10, border_color=renk,
         )
         self.tutar.pack(pady=8)
         tutar_bind(self.tutar)
+        self.tutar.bind("<KeyRelease>", lambda e: self._tl_onizle())
+
+        # Para birimi seçimi (çoklu para birimi). TRY dışı seçilince tutar,
+        # güncel TCMB/elle kurla TL'ye çevrilip öyle saklanır; orijinal tutar
+        # da korunur. Canlı önizleme TL karşılığını gösterir.
+        self.para_birimi = ctk.CTkComboBox(
+            form, width=380, height=42, values=list(PARA_BIRIMLERI.keys()),
+            font=("Segoe UI", 14), corner_radius=10, border_color=renk,
+            button_color=renk, command=lambda _v: self._tl_onizle(),
+        )
+        self.para_birimi.set("TRY")
+        self.para_birimi.pack(pady=8)
+
+        self.tl_onizleme = ctk.CTkLabel(
+            form, text="", font=("Segoe UI", 12), text_color=tema.METIN_SOLUK,
+        )
+        self.tl_onizleme.pack(pady=(0, 4))
 
         self.etiketler = ctk.CTkEntry(
             form, width=380, height=42,
@@ -100,6 +119,33 @@ class IslemFormuSayfasi(ctk.CTkFrame):
     def _kategori_listesi(self) -> list:
         # Birleştirme mantığı ui.utils.kategori_listesi'nde tek yerde
         return kategori_listesi(self.db, self.tur)
+
+    def _tl_onizle(self):
+        """Yabancı para biriminde girilen tutarın TL karşılığını canlı gösterir."""
+        birim = self.para_birimi.get()
+        if birim == "TRY":
+            self.tl_onizleme.configure(text="")
+            return
+        try:
+            miktar = tutar_oku(self.tutar)
+        except ValueError:
+            self.tl_onizleme.configure(text="")
+            return
+        oran = kur.guncel_kur(self.db, birim)
+        if oran is None:
+            self.tl_onizleme.configure(
+                text=f"⚠ {birim} kuru yok — Ayarlar ▸ Döviz Kurları'ndan güncelle",
+                text_color="#f59e0b",
+            )
+            return
+        kaynak = kur.kur_kaynagi(self.db, birim)
+        self.tl_onizleme.configure(
+            text=(
+                f"≈ {para_formatla(miktar * oran)}   "
+                f"(1 {birim} = {para_formatla(oran, sembol=False)} ₺ · {kaynak})"
+            ),
+            text_color=tema.METIN_SOLUK,
+        )
 
     def kaydet(self):
         try:
@@ -130,21 +176,47 @@ class IslemFormuSayfasi(ctk.CTkFrame):
             )
             return
 
+        # Para birimi çevirisi: TL dışıysa güncel kurla TL'ye çevir; TL değeri
+        # 'tutar' (temel/raporlama), girilen miktar 'orijinal_tutar' olur.
+        birim = self.para_birimi.get()
+        orijinal_tutar = tutar
+        if birim == "TRY":
+            tl_tutar = tutar
+        else:
+            oran = kur.guncel_kur(self.db, birim)
+            if oran is None:
+                messagebox.showerror(
+                    "Kur bulunamadı",
+                    f"{birim} için güncel kur yok. Ayarlar ▸ Döviz Kurları'ndan "
+                    "TCMB'den güncelleyin veya elle bir kur girin.",
+                )
+                return
+            tl_tutar = tutar * oran
+
         try:
             self.db.kategori_ekle(self.tur, kategori)
             self.kategori.configure(values=self._kategori_listesi())
             ekle = self.db.gelir_ekle if self.tur == "Gelir" else self.db.gider_ekle
             ekle(
-                self.tarih.get(), kategori, self.aciklama.get(), tutar,
-                self.etiketler.get().strip(),
+                self.tarih.get(), kategori, self.aciklama.get(), tl_tutar,
+                self.etiketler.get().strip(), birim, orijinal_tutar,
             )
         except Exception as e:
             messagebox.showerror("Hata", str(e))
             return
 
-        messagebox.showinfo("Başarılı", f"{self.tur} başarıyla kaydedildi.")
+        if birim == "TRY":
+            mesaj = f"{self.tur} başarıyla kaydedildi."
+        else:
+            mesaj = (
+                f"{self.tur} kaydedildi: "
+                f"{para_formatla(orijinal_tutar, para_birimi=birim)} "
+                f"→ {para_formatla(tl_tutar)}"
+            )
+        messagebox.showinfo("Başarılı", mesaj)
         self.aciklama.delete(0, "end")
         self.tutar.delete(0, "end")
         self.etiketler.delete(0, "end")
+        self.tl_onizleme.configure(text="")
         if self.dashboard_callback:
             self.dashboard_callback()

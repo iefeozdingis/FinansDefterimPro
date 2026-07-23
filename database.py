@@ -156,8 +156,13 @@ def para_lira(kurus: Any) -> float:
 # okuma sınırında lira'ya (÷100.0) çevrilir. Kolon SIRASI create_tables ile
 # birebir aynıdır (UI indeksleri islem[5]=tutar'a dayanır). Sabit literaldir,
 # enjeksiyon riski yoktur.
+#
+# Sona eklenen çoklu-para kolonları (index 8-9): para_birimi ve orijinal tutar
+# (lira). COALESCE(orijinal_tutar, tutar): eski/iç-yol kayıtları orijinal_tutar
+# vermese bile TL tutarına düşer, yani TL işlemler doğru görünür.
 _ISLEM_SECIM = (
-    "id, tarih, tur, kategori, aciklama, tutar/100.0, etiketler, kullanici_id"
+    "id, tarih, tur, kategori, aciklama, tutar/100.0, etiketler, "
+    "kullanici_id, para_birimi, COALESCE(orijinal_tutar, tutar)/100.0"
 )
 
 
@@ -184,7 +189,7 @@ def normalize_date(tarih_str: str) -> str:
 
 
 # Şema sürümü — her artışta _migrate() ilgili adımı uygular
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # Geri-al yığınında en fazla kaç silme partisi tutulur
 GERI_AL_YIGIN_SINIRI = 20
@@ -283,6 +288,8 @@ class Database:
             self._migrate_borc_odemeler_fk()
         if mevcut < 7:
             self._migrate_kurus_tam_sayi()
+        if mevcut < 8:
+            self._migrate_para_birimi()
         if mevcut < SCHEMA_VERSION:
             self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.conn.commit()
@@ -433,6 +440,43 @@ class Database:
                     f"CAST(ROUND({kolon} * 100) AS INTEGER) "
                     f"WHERE {kolon} IS NOT NULL"
                 )
+        self.conn.commit()
+
+    def _migrate_para_birimi(self) -> None:
+        """v8: islemler'e çoklu para birimi kolonları ekler.
+
+        - para_birimi: işlemin orijinal para birimi (varsayılan 'TRY').
+        - orijinal_tutar: orijinal birimdeki tutar, KURUŞ/cent (minör birim).
+
+        tutar sütunu TL-kuruş (temel/raporlama) olarak KALIR; yabancı işlemler
+        girişte TCMB kuruyla TL'ye çevrilip öyle saklanır. Böylece tüm mevcut
+        SUM/bakiye/bütçe/rapor sorguları değişmeden TL bazında doğru çalışır.
+        Eski satırların hepsi TL kabul edilir: orijinal_tutar = tutar.
+
+        v7'den (kuruş) sonra çalışır; orijinal_tutar da kuruş olur ve tutar ile
+        birebir eşleşir.
+        """
+        kolonlar = {
+            r[1]
+            for r in self.conn.execute(
+                "PRAGMA table_info(islemler)"
+            ).fetchall()
+        }
+        if not kolonlar:
+            return  # tablo yok (yeni kurulum) — create_tables halleder
+        if "para_birimi" not in kolonlar:
+            self.conn.execute(
+                "ALTER TABLE islemler ADD COLUMN para_birimi TEXT NOT NULL "
+                "DEFAULT 'TRY'"
+            )
+        if "orijinal_tutar" not in kolonlar:
+            self.conn.execute(
+                "ALTER TABLE islemler ADD COLUMN orijinal_tutar INTEGER"
+            )
+            self.conn.execute(
+                "UPDATE islemler SET orijinal_tutar = tutar "
+                "WHERE orijinal_tutar IS NULL"
+            )
         self.conn.commit()
 
     def _migrate_borc_bakiyeden_ayir(self) -> None:
@@ -592,7 +636,9 @@ class Database:
             aciklama TEXT,
             tutar INTEGER NOT NULL,
             etiketler TEXT DEFAULT '',
-            kullanici_id INTEGER DEFAULT 1
+            kullanici_id INTEGER DEFAULT 1,
+            para_birimi TEXT NOT NULL DEFAULT 'TRY',
+            orijinal_tutar INTEGER
         )
         """)
 
@@ -730,19 +776,24 @@ class Database:
 
     def gelir_ekle(
         self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float,
-        etiketler: str = ""
+        etiketler: str = "", para_birimi: str = "TRY",
+        orijinal_tutar: Optional[float] = None,
     ) -> None:
+        """Gelir ekler. tutar TEMEL (TL) değerdir; yabancı para birimi için
+        çağıran (UI) kur çevirisini yapıp tutar=orijinal*kur geçirir,
+        orijinal_tutar'da da orijinal birimdeki tutarı (lira) verir."""
         tarih_iso = normalize_date(tarih)
+        orijinal = tutar if orijinal_tutar is None else orijinal_tutar
         self.cursor.execute(
             """
         INSERT INTO islemler
-        (tarih,tur,kategori,aciklama,tutar,etiketler,kullanici_id)
-
-        VALUES (?,?,?,?,?,?,?)
-
+        (tarih,tur,kategori,aciklama,tutar,etiketler,kullanici_id,
+         para_birimi,orijinal_tutar)
+        VALUES (?,?,?,?,?,?,?,?,?)
         """,
             (tarih_iso, "Gelir", kategori, aciklama, para_kurus(tutar),
-             etiketler, self.aktif_kullanici_id),
+             etiketler, self.aktif_kullanici_id, para_birimi,
+             para_kurus(orijinal)),
         )
         self._log_islem("gelir_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
         self.conn.commit()
@@ -753,19 +804,24 @@ class Database:
 
     def gider_ekle(
         self, tarih: str, kategori: str, aciklama: Optional[str], tutar: float,
-        etiketler: str = ""
+        etiketler: str = "", para_birimi: str = "TRY",
+        orijinal_tutar: Optional[float] = None,
     ) -> None:
+        """Gider ekler. tutar TEMEL (TL) değerdir; yabancı para birimi için
+        çağıran (UI) kur çevirisini yapıp tutar=orijinal*kur geçirir,
+        orijinal_tutar'da da orijinal birimdeki tutarı (lira) verir."""
         tarih_iso = normalize_date(tarih)
+        orijinal = tutar if orijinal_tutar is None else orijinal_tutar
         self.cursor.execute(
             """
         INSERT INTO islemler
-        (tarih,tur,kategori,aciklama,tutar,etiketler,kullanici_id)
-
-        VALUES (?,?,?,?,?,?,?)
-
+        (tarih,tur,kategori,aciklama,tutar,etiketler,kullanici_id,
+         para_birimi,orijinal_tutar)
+        VALUES (?,?,?,?,?,?,?,?,?)
         """,
             (tarih_iso, "Gider", kategori, aciklama, para_kurus(tutar),
-             etiketler, self.aktif_kullanici_id),
+             etiketler, self.aktif_kullanici_id, para_birimi,
+             para_kurus(orijinal)),
         )
         self._log_islem("gider_ekle", self.cursor.lastrowid, f"{kategori}: {tutar}")
         self.conn.commit()
@@ -843,27 +899,38 @@ class Database:
         aciklama: Optional[str],
         tutar: float,
         etiketler: Optional[str] = None,
+        para_birimi: str = "TRY",
+        orijinal_tutar: Optional[float] = None,
     ) -> None:
+        """İşlemi günceller. tutar TEMEL (TL) değerdir; yabancı para için
+        çağıran (UI) güncel kurla tutar=orijinal*kur geçirir, orijinal_tutar'da
+        orijinal birimdeki tutarı verir. Para birimi belirtilmezse TL kabul
+        edilir (orijinal_tutar=tutar)."""
         tarih_iso = normalize_date(tarih)
-        tutar = para_kurus(tutar)
+        tutar_k = para_kurus(tutar)
+        orijinal_k = para_kurus(tutar if orijinal_tutar is None else orijinal_tutar)
         uid = self.aktif_kullanici_id
         if etiketler is None:
             self.cursor.execute(
                 """
             UPDATE islemler
-            SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?
+            SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?,
+                para_birimi=?, orijinal_tutar=?
             WHERE id=? AND kullanici_id=?
             """,
-                (tarih_iso, tur, kategori, aciklama, tutar, id, uid),
+                (tarih_iso, tur, kategori, aciklama, tutar_k,
+                 para_birimi, orijinal_k, id, uid),
             )
         else:
             self.cursor.execute(
                 """
             UPDATE islemler
-            SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?, etiketler=?
+            SET tarih=?, tur=?, kategori=?, aciklama=?, tutar=?, etiketler=?,
+                para_birimi=?, orijinal_tutar=?
             WHERE id=? AND kullanici_id=?
             """,
-                (tarih_iso, tur, kategori, aciklama, tutar, etiketler, id, uid),
+                (tarih_iso, tur, kategori, aciklama, tutar_k, etiketler,
+                 para_birimi, orijinal_k, id, uid),
             )
         self._log_islem("guncelle", id, f"{kategori}: {tutar}")
         self.conn.commit()
@@ -948,7 +1015,10 @@ class Database:
     def export_csv(self, path: str) -> None:
         with open(path, "w", newline="", encoding="utf-8") as dosya:
             writer = csv.writer(dosya)
-            writer.writerow(["id", "tarih", "tur", "kategori", "aciklama", "tutar"])
+            writer.writerow([
+                "id", "tarih", "tur", "kategori", "aciklama", "tutar",
+                "para_birimi", "orijinal_tutar",
+            ])
             for satir in self.tum_islemler():
                 # Tarihi GG.AA.YYYY formatına çevir
                 try:
@@ -956,10 +1026,13 @@ class Database:
                     tarih_goster = dt.strftime("%d.%m.%Y")
                 except ValueError:
                     tarih_goster = satir[1]
+                # satir[5]=TL tutar, satir[8]=para_birimi, satir[9]=orijinal
+                para_birimi = satir[8] if len(satir) > 8 else "TRY"
+                orijinal = satir[9] if len(satir) > 9 else satir[5]
                 writer.writerow(
                     [satir[0], tarih_goster,
                      csv_guvenli(satir[2]), csv_guvenli(satir[3]),
-                     csv_guvenli(satir[4]), satir[5]]
+                     csv_guvenli(satir[4]), satir[5], para_birimi, orijinal]
                 )
 
     @staticmethod
@@ -1366,9 +1439,20 @@ class Database:
         try:
             with self._transaction():
                 for veri in parti:
-                    # SELECT * kullanici_id'yi de içerir (8. sütun); onu da
-                    # koruyarak geri ekle, yoksa kayıt admin'e (1) düşer.
-                    if len(veri) >= 8:
+                    # SELECT * tüm sütunları ham (kuruş) verir; hepsini
+                    # koruyarak geri ekle. 10 sütun = çoklu para birimi şeması
+                    # (para_birimi + orijinal_tutar); yoksa USD işlem geri
+                    # alınınca TL'ye düşerdi.
+                    if len(veri) >= 10:
+                        self.cursor.execute(
+                            "INSERT INTO islemler (id, tarih, tur, kategori, "
+                            "aciklama, tutar, etiketler, kullanici_id, "
+                            "para_birimi, orijinal_tutar) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                            veri[:10],
+                        )
+                    elif len(veri) >= 8:
+                        # kullanici_id'yi de koru (8. sütun), yoksa admin'e düşer
                         self.cursor.execute(
                             "INSERT INTO islemler (id, tarih, tur, kategori, "
                             "aciklama, tutar, etiketler, kullanici_id) "

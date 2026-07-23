@@ -2,8 +2,10 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
+import kur
 from database import csv_guvenli, normalize_date
 from ui import tema
+from ui.money import PARA_BIRIMLERI
 from ui.utils import (
     kategori_listesi,
     modal_yap,
@@ -21,7 +23,7 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         self.db = db
         self.islem = islem
         self.title("İşlem Düzenle")
-        self.geometry("420x360")
+        self.geometry("420x440")
         self.resizable(False, False)
 
         # Modal: arkaya kaçmaz, ana sayfaya tıklanamaz
@@ -63,14 +65,29 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
         self.aciklama.insert(0, islem[4])
         self.aciklama.pack(pady=8)
 
-        self.tutar = ctk.CTkEntry(self, width=300, placeholder_text="Tutar")
-        # Tutarı formatlı göster
+        # Para birimi (çoklu para birimi). islem[8]=para_birimi, islem[9]=
+        # orijinal tutar (lira). Yabancı işlemde ORİJİNAL tutar düzenlenir;
+        # kaydederken güncel kurla TL'ye yeniden çevrilir.
+        self._birim = islem[8] if len(islem) > 8 and islem[8] else "TRY"
+        # Düzenlenen değer: yabancıysa orijinal, değilse TL (ikisi de eşit).
         try:
-            self.tutar.insert(0, para_formatla(float(islem[5]), sembol=False))
+            duzenlenecek = float(islem[9]) if len(islem) > 9 else float(islem[5])
+        except (ValueError, TypeError, IndexError):
+            duzenlenecek = float(islem[5])
+
+        self.tutar = ctk.CTkEntry(self, width=300, placeholder_text="Tutar")
+        try:
+            self.tutar.insert(0, para_formatla(duzenlenecek, sembol=False))
         except (ValueError, TypeError):
-            self.tutar.insert(0, str(islem[5]))
+            self.tutar.insert(0, str(duzenlenecek))
         self.tutar.pack(pady=8)
         tutar_bind(self.tutar)
+
+        self.para_birimi = ctk.CTkComboBox(
+            self, width=300, values=list(PARA_BIRIMLERI.keys()),
+        )
+        self.para_birimi.set(self._birim)
+        self.para_birimi.pack(pady=8)
 
         self.etiketler = ctk.CTkEntry(self, width=300, placeholder_text="Etiketler (virgülle ayır)")
         if len(islem) > 6 and islem[6]:
@@ -100,14 +117,39 @@ class IslemDuzenlemePenceresi(ctk.CTkToplevel):
             return
 
         try:
+            girilen = tutar_oku(self.tutar)
+        except ValueError:
+            messagebox.showerror("Hata", "Lütfen geçerli bir tutar giriniz.")
+            return
+
+        # Girilen değer orijinal para birimindedir; TL dışıysa güncel kurla
+        # TL'ye çevrilip öyle saklanır (orijinal tutar da korunur).
+        birim = self.para_birimi.get()
+        orijinal_tutar = girilen
+        if birim == "TRY":
+            tl_tutar = girilen
+        else:
+            oran = kur.guncel_kur(self.db, birim)
+            if oran is None:
+                messagebox.showerror(
+                    "Kur bulunamadı",
+                    f"{birim} için güncel kur yok. Ayarlar ▸ Döviz "
+                    "Kurları'ndan güncelleyin.",
+                )
+                return
+            tl_tutar = girilen * oran
+
+        try:
             self.db.guncelle_islem(
                 self.islem[0],
                 tarih_iso,
                 self.tur.get(),
                 self.kategori.get(),
                 self.aciklama.get(),
-                tutar_oku(self.tutar),
+                tl_tutar,
                 self.etiketler.get().strip(),
+                birim,
+                orijinal_tutar,
             )
             messagebox.showinfo("Başarılı", "İşlem güncellendi.")
             self.destroy()
@@ -958,7 +1000,8 @@ class Dashboard(ctk.CTkFrame):
 
         Tablo ham veri gösteriyordu: tutar '1500.0', tarih '2026-07-15' —
         oysa uygulamanın her yerinde '1.500,00 ₺' ve '15.07.2026' kullanılıyor.
-        Sütunlar: (id, tarih, tur, kategori, aciklama, tutar, etiketler).
+        Sütunlar: (id, tarih, tur, kategori, aciklama, tutar, etiketler);
+        satir[8]=para_birimi, satir[9]=orijinal tutar (çoklu para birimi).
         """
         from datetime import datetime
         deger = list(satir)
@@ -968,7 +1011,17 @@ class Dashboard(ctk.CTkFrame):
         except (ValueError, IndexError):
             pass
         try:
-            deger[5] = para_formatla(float(deger[5]), sembol=False)
+            tl = float(deger[5])
+            birim = deger[8] if len(deger) > 8 and deger[8] else "TRY"
+            if birim != "TRY":
+                # Hem TL (temel) hem orijinal tutar gösterilir
+                orijinal = float(deger[9]) if len(deger) > 9 else tl
+                deger[5] = (
+                    f"{para_formatla(tl, sembol=False)} ₺ "
+                    f"({para_formatla(orijinal, para_birimi=birim)})"
+                )
+            else:
+                deger[5] = para_formatla(tl, sembol=False)
         except (ValueError, IndexError, TypeError):
             pass
         return deger

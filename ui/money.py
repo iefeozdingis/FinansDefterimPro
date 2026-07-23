@@ -6,6 +6,21 @@ para mantığı headless ortamda (CI dahil) test edilebilir.
 
 from typing import Optional
 
+# Desteklenen para birimleri — hepsi 2 ondalıklı (minör birim = 100 kuruş/cent).
+# 'TRY' temel/raporlama birimidir; yabancı işlemler girişte TL'ye çevrilerek
+# saklanır (bkz. database.gelir_ekle) ama orijinal tutar+birim de korunur.
+PARA_BIRIMLERI = {
+    "TRY": {"sembol": "₺", "ad": "Türk Lirası"},
+    "USD": {"sembol": "$", "ad": "ABD Doları"},
+    "EUR": {"sembol": "€", "ad": "Euro"},
+    "GBP": {"sembol": "£", "ad": "İngiliz Sterlini"},
+}
+
+
+def para_sembol(para_birimi: str) -> str:
+    """Para birimi kodunun sembolünü döner; bilinmeyen kod kendini döner."""
+    return PARA_BIRIMLERI.get(para_birimi, {}).get("sembol", para_birimi)
+
 
 def para_parse(metin: str) -> float:
     """Kullanıcı girdisindeki tutarı güvenle float'a çevirir.
@@ -88,9 +103,19 @@ def butce_durum_etiketi(harcanan: float, butce: float) -> tuple:
     return oran, durum, renk
 
 
-def para_formatla(deger: float, sembol: bool = True, ondalik: int = 2) -> str:
-    """Tutarı Türk para formatında döner: 1.234,56 ₺ (negatif: -1.234,56 ₺)."""
+def para_formatla(
+    deger: float, sembol: bool = True, ondalik: int = 2,
+    para_birimi: str = "TRY",
+) -> str:
+    """Tutarı Türk sayı formatında döner: 1.234,56 ₺ (negatif: -1.234,56 ₺).
+
+    para_birimi ile sembol değişir (USD→$, EUR→€, GBP→£); varsayılan TRY→₺
+    olduğundan mevcut tüm çağrılar değişmeden çalışır. Sayı biçimi (binlik ".",
+    ondalık ",") her birim için aynı kalır; yalnızca sembol farklıdır.
+    """
     metin = f"{abs(deger):,.{ondalik}f}"
     metin = metin.replace(",", "X").replace(".", ",").replace("X", ".")
     isaret = "-" if deger < 0 else ""
-    return f"{isaret}{metin} ₺" if sembol else f"{isaret}{metin}"
+    if not sembol:
+        return f"{isaret}{metin}"
+    return f"{isaret}{metin} {para_sembol(para_birimi)}"

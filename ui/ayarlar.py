@@ -1,9 +1,12 @@
+import threading
 from tkinter import filedialog, messagebox
 from typing import Any, Callable, Optional
 
 import customtkinter as ctk  # type: ignore
 
+import kur
 from ui import tema
+from ui.money import para_formatla, para_parse
 from ui.utils import modal_yap
 
 
@@ -122,6 +125,16 @@ class AyarlarSayfasi(ctk.CTkFrame):
             width=220,
             fg_color="#0ea5e9",
             command=self._bildirim_test,
+        ).pack(
+            pady=6
+        )  # type: ignore
+
+        ctk.CTkButton(
+            kart,
+            text="💱 Döviz Kurları",
+            width=220,
+            fg_color="#14b8a6",
+            command=self._doviz_kurlari,
         ).pack(
             pady=6
         )  # type: ignore
@@ -251,6 +264,9 @@ class AyarlarSayfasi(ctk.CTkFrame):
                 "kısmından Python bildirimlerini kontrol et."
             )
             messagebox.showerror("Hata", msg)
+
+    def _doviz_kurlari(self):
+        DovizKurlariPenceresi(self, self.db)
 
     def _sifre_degistir(self):
         SifreDegistirPenceresi(self, self.db)
@@ -451,3 +467,136 @@ class ProfilDuzenlePenceresi(ctk.CTkToplevel):
         self.db.kullanici_profil_guncelle(kullanici_id, yeni_ad)
         messagebox.showinfo("Başarılı", f"Profil güncellendi: {yeni_ad}")
         self.destroy()
+
+
+class DovizKurlariPenceresi(ctk.CTkToplevel):
+    """Döviz kuru yönetimi: TCMB'den çekme + elle geçersiz kılma.
+
+    Kurlar ayarlar tablosunda saklanır; işlem formu buradan (önbellek/elle)
+    okur. TCMB çekimi ağ I/O olduğu için worker thread'de yapılır ve sonuç
+    ana thread'e after(0,...) ile döner (arayüz bloklanmaz)."""
+
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        self.title("Döviz Kurları")
+        self.geometry("480x400")
+        self.resizable(False, False)
+        modal_yap(self, parent)
+
+        ctk.CTkLabel(
+            self, text="💱 Döviz Kurları", font=("Segoe UI", 20, "bold")
+        ).pack(pady=(18, 2))
+        ctk.CTkLabel(
+            self,
+            text="1 birim kaç ₺ · Elle girilen kur TCMB'nin önüne geçer",
+            font=("Segoe UI", 11),
+            text_color="#94a3b8",
+        ).pack(pady=(0, 8))
+
+        self.durum = ctk.CTkLabel(
+            self, text="", font=("Segoe UI", 11), text_color="#94a3b8"
+        )
+        self.durum.pack(pady=(0, 4))
+
+        self._govde = ctk.CTkFrame(self, fg_color="transparent")
+        self._govde.pack(fill="x", padx=24)
+        self._satirlar = {}
+        self._kur_satirlari()
+
+        ctk.CTkButton(
+            self, text="🔄 TCMB'den Güncelle", width=220, fg_color="#0ea5e9",
+            command=self._tcmb_guncelle,
+        ).pack(pady=(16, 6))
+        ctk.CTkButton(
+            self, text="Kapat", width=120, fg_color="#475569",
+            command=self.destroy,
+        ).pack(pady=(0, 10))
+
+    def _kur_satirlari(self):
+        for w in self._govde.winfo_children():
+            w.destroy()
+        self._satirlar = {}
+        for kod in kur.DESTEKLENEN:
+            row = ctk.CTkFrame(self._govde, fg_color="transparent")
+            row.pack(fill="x", pady=5)
+            oran = kur.guncel_kur(self.db, kod)
+            kaynak = kur.kur_kaynagi(self.db, kod)
+            etiket = f"{kod}  ({kaynak})" if oran else f"{kod}  (kur yok)"
+            ctk.CTkLabel(
+                row, text=etiket, width=170, anchor="w", font=("Segoe UI", 13)
+            ).pack(side="left")
+            giris = ctk.CTkEntry(row, width=100, placeholder_text="elle kur")
+            if oran is not None:
+                giris.insert(0, para_formatla(oran, sembol=False))
+            giris.pack(side="left", padx=6)
+            self._satirlar[kod] = giris
+            ctk.CTkButton(
+                row, text="Kaydet", width=64,
+                command=lambda k=kod: self._elle_kaydet(k),
+            ).pack(side="left", padx=2)
+            ctk.CTkButton(
+                row, text="✕", width=32, fg_color="#475569",
+                command=lambda k=kod: self._elle_temizle(k),
+            ).pack(side="left")
+
+    def _elle_kaydet(self, kod):
+        metin = self._satirlar[kod].get().strip()
+        try:
+            deger = para_parse(metin)
+        except Exception:
+            messagebox.showerror("Hata", "Geçerli bir kur girin (örn: 34,15).")
+            return
+        if deger <= 0:
+            messagebox.showerror("Hata", "Kur sıfırdan büyük olmalıdır.")
+            return
+        kur.elle_kur_ayarla(self.db, kod, deger)
+        messagebox.showinfo(
+            "Kaydedildi",
+            f"{kod} için elle kur: {para_formatla(deger, sembol=False)} ₺",
+        )
+        self._kur_satirlari()
+
+    def _elle_temizle(self, kod):
+        kur.elle_kur_ayarla(self.db, kod, None)
+        self._kur_satirlari()
+
+    def _tcmb_guncelle(self):
+        self.durum.configure(
+            text="TCMB'den çekiliyor…", text_color="#94a3b8"
+        )
+
+        # SQLite bağlantısı ana thread'e bağlıdır (check_same_thread): AĞ
+        # çekimi worker'da yapılır, DB'ye YAZMA ana thread'e after(0) ile
+        # marshal edilir (bkz. dashboard içe-aktarım kalıbı).
+        def isle():
+            try:
+                kurlar = kur.tcmb_getir()
+                self.after(0, lambda: self._tcmb_bitti(kurlar, None))
+            except Exception as e:  # ağ/parse hatası
+                self.after(0, lambda e=e: self._tcmb_bitti(None, e))
+
+        threading.Thread(target=isle, daemon=True).start()
+
+    def _tcmb_bitti(self, kurlar, hata):
+        if not self.winfo_exists():
+            return
+        if hata is not None:
+            self.durum.configure(
+                text=f"⚠ Güncellenemedi: {hata}", text_color="#f59e0b"
+            )
+            return
+        # Ana thread — DB yazımı güvenli
+        from datetime import date
+        try:
+            kur.onbellek_kaydet(self.db, kurlar, date.today().isoformat())
+        except Exception as e:
+            self.durum.configure(
+                text=f"⚠ Kaydedilemedi: {e}", text_color="#f59e0b"
+            )
+            return
+        adet = len(kurlar or {})
+        self.durum.configure(
+            text=f"✓ TCMB güncellendi ({adet} kur)", text_color="#22c55e"
+        )
+        self._kur_satirlari()
